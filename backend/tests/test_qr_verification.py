@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.database import db_session, init_db, write_transaction
 from app.main import create_app
 from app.models import hash_pickup_token
+from tests.auth_helpers import create_manager_client, create_staff_client, create_student_client
 
 
 def _setup_test_app(monkeypatch, tmpdir: str):
@@ -26,15 +27,19 @@ def test_qr_token_hash_storage_uniqueness_and_non_exposure(monkeypatch) -> None:
     """Verify high-entropy unique tokens are stored only as SHA-256 hashes and hidden from queue/list APIs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
-            o1 = client.post(
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            student = create_student_client(app)
+
+            o1 = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Student One",
                     "items": [{"menu_item_id": "item_1", "quantity": 1}],
                 },
             ).json()
-            o2 = client.post(
+            o2 = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Student Two",
@@ -62,9 +67,9 @@ def test_qr_token_hash_storage_uniqueness_and_non_exposure(monkeypatch) -> None:
 
             # Kitchen queue, manager list, and GET order tracking must never expose raw or hashed token
             for endpoint_payload in (
-                client.get("/api/kitchen/orders").json()[0],
-                client.get("/api/manager/orders").json()[0],
-                client.get(f"/api/orders/{o1['id']}").json(),
+                staff.get("/api/kitchen/orders").json()[0],
+                manager.get("/api/manager/orders").json()[0],
+                student.get(f"/api/orders/{o1['id']}").json(),
             ):
                 assert "pickup_token" not in endpoint_payload
                 assert "pickup_token_hash" not in endpoint_payload
@@ -76,9 +81,13 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
     """Verify READY order QR collection, non-READY rejection, invalid/unknown/reused/cancelled tokens, and slot release."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            student = create_student_client(app)
+
             # Create order with 2 x Masala Dosa = 12 units (fills earliest slot)
-            created = client.post(
+            created = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "QR Student",
@@ -91,12 +100,12 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
 
             # Malformed / short token rejected (422)
             assert (
-                client.post("/api/kitchen/verify-pickup", json={"token": "bad"}).status_code
+                staff.post("/api/kitchen/verify-pickup", json={"token": "bad"}).status_code
                 == 422
             )
 
             # Unknown valid-length token rejected (404)
-            unknown_res = client.post(
+            unknown_res = staff.post(
                 "/api/kitchen/verify-pickup",
                 json={"token": "qlp_unknown_token_12345678"},
             )
@@ -105,7 +114,7 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
 
             # Reject pickup codes used as substitute token (422 short / 404 unknown)
             assert (
-                client.post(
+                staff.post(
                     "/api/kitchen/verify-pickup",
                     json={"token": created["pickup_code"]},
                 ).status_code
@@ -116,13 +125,13 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
             for status_step in ("PLACED", "ACCEPTED", "PREPARING"):
                 if status_step != "PLACED":
                     assert (
-                        client.patch(
+                        staff.patch(
                             f"/api/kitchen/orders/{order_id}/status",
                             json={"status": status_step},
                         ).status_code
                         == 200
                     )
-                not_ready = client.post(
+                not_ready = staff.post(
                     "/api/kitchen/verify-pickup", json={"token": token}
                 )
                 assert not_ready.status_code == 409
@@ -130,19 +139,19 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
 
             # Advance to READY -> slot still occupied 12/12
             assert (
-                client.patch(
+                staff.patch(
                     f"/api/kitchen/orders/{order_id}/status",
                     json={"status": "READY"},
                 ).status_code
                 == 200
             )
-            slots_before = client.get("/api/kitchen/slots").json()
+            slots_before = staff.get("/api/kitchen/slots").json()
             target_before = next(s for s in slots_before if s["slot_start"] == slot_start)
             assert target_before["used_units"] == 12
             assert target_before["is_full"] is True
 
             # Valid QR verification collects READY order and releases slot capacity
-            verify_res = client.post(
+            verify_res = staff.post(
                 "/api/kitchen/verify-pickup", json={"token": token}
             )
             assert verify_res.status_code == 200
@@ -154,23 +163,23 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
             assert len(verify_body["order"]["items"]) == 1
 
             # Student tracking reflects COLLECTED
-            assert client.get(f"/api/orders/{order_id}").json()["status"] == "COLLECTED"
+            assert student.get(f"/api/orders/{order_id}").json()["status"] == "COLLECTED"
 
             # Slot capacity released once
-            slots_after = client.get("/api/kitchen/slots").json()
+            slots_after = staff.get("/api/kitchen/slots").json()
             target_after = next(s for s in slots_after if s["slot_start"] == slot_start)
             assert target_after["used_units"] == 0
             assert target_after["is_full"] is False
 
             # Reusing same token fails with 409 order_already_collected
-            reuse_res = client.post(
+            reuse_res = staff.post(
                 "/api/kitchen/verify-pickup", json={"token": token}
             )
             assert reuse_res.status_code == 409
             assert reuse_res.json()["error"] == "order_already_collected"
 
             # Cancelled order cannot be collected via QR
-            cancelled = client.post(
+            cancelled = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Cancel Target",
@@ -182,7 +191,7 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
                     "UPDATE orders SET status = 'CANCELLED' WHERE id = ?",
                     (cancelled["id"],),
                 )
-            cancel_res = client.post(
+            cancel_res = staff.post(
                 "/api/kitchen/verify-pickup",
                 json={"token": cancelled["pickup_token"]},
             )
@@ -190,7 +199,7 @@ def test_qr_verification_lifecycle_errors_and_capacity_release(monkeypatch) -> N
             assert cancel_res.json()["error"] == "order_cancelled"
 
             # Demo reset remains compatible and clears orders + tokens cleanly
-            reset_res = client.post("/api/demo/reset")
+            reset_res = manager.post("/api/demo/reset")
             assert reset_res.status_code == 200
             assert reset_res.json()["deleted_orders"] == 2
 
@@ -201,8 +210,12 @@ def test_concurrent_qr_verification_prevents_double_collection(monkeypatch) -> N
     """Verify simultaneous duplicate QR scans allow exactly one 200 collection and reject others with 409."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
-            created = client.post(
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            student = create_student_client(app)
+
+            created = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Concurrency Student",
@@ -213,13 +226,13 @@ def test_concurrent_qr_verification_prevents_double_collection(monkeypatch) -> N
             token = created["pickup_token"]
 
             for next_status in ("ACCEPTED", "PREPARING", "READY"):
-                client.patch(
+                staff.patch(
                     f"/api/kitchen/orders/{order_id}/status",
                     json={"status": next_status},
                 )
 
             def verify_attempt(_idx: int) -> int:
-                return client.post(
+                return staff.post(
                     "/api/kitchen/verify-pickup",
                     json={"token": token},
                 ).status_code
@@ -230,7 +243,7 @@ def test_concurrent_qr_verification_prevents_double_collection(monkeypatch) -> N
             assert statuses == [200, 409, 409, 409, 409]
 
             # Capacity released cleanly (0 active units)
-            slots = client.get("/api/kitchen/slots").json()
+            slots = staff.get("/api/kitchen/slots").json()
             assert all(s["used_units"] == 0 for s in slots)
 
         get_settings.cache_clear()
@@ -283,9 +296,13 @@ def test_manual_collection_invalidates_qr_and_legacy_orders_migrate_safely(
         init_db()
 
         app = create_app()
-        with TestClient(app) as client:
-            # Legacy READY order can still be collected manually
-            legacy_collect = client.patch(
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            student = create_student_client(app)
+
+            # Legacy READY order can still be collected manually by authorized staff
+            legacy_collect = staff.patch(
                 "/api/kitchen/orders/ord_legacy1/status",
                 json={"status": "COLLECTED"},
             )
@@ -293,7 +310,7 @@ def test_manual_collection_invalidates_qr_and_legacy_orders_migrate_safely(
             assert legacy_collect.json()["status"] == "COLLECTED"
 
             # New QR order collected manually must invalidate its QR token
-            created = client.post(
+            created = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Manual Collect",
@@ -302,14 +319,14 @@ def test_manual_collection_invalidates_qr_and_legacy_orders_migrate_safely(
             ).json()
             for st in ("ACCEPTED", "PREPARING", "READY", "COLLECTED"):
                 assert (
-                    client.patch(
+                    staff.patch(
                         f"/api/kitchen/orders/{created['id']}/status",
                         json={"status": st},
                     ).status_code
                     == 200
                 )
 
-            qr_after_manual = client.post(
+            qr_after_manual = staff.post(
                 "/api/kitchen/verify-pickup",
                 json={"token": created["pickup_token"]},
             )

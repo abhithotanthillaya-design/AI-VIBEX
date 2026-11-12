@@ -2,11 +2,12 @@
 
 ## Preparation Before Judges Arrive
 
-1. Start the backend (`uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`) and frontend (`npm.cmd run dev`).
-2. Open `http://localhost:5173` in two side-by-side browser windows (or tabs):
-   - **Window A:** **Student** view
-   - **Window B:** **Kitchen** view
-3. In **Kitchen**, if previous test orders exist, click **Reset Demo** and confirm to start with an empty queue and `0 / 12` capacity across all pickup slots.
+1. Ensure the initial Manager account has been bootstrapped once via CLI (`cd backend; .\.venv\Scripts\python.exe -m app.bootstrap_manager`), and create at least one `CANTEEN_STAFF` account inside the Manager Console's **Staff** tab (or register a fresh Student account during the demo). Never embed hardcoded passwords in code or slides.
+2. Start the backend (`uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`) and frontend (`npm.cmd run dev`).
+3. Sign in across two browser contexts (e.g. a normal window and a private/secondary profile) because cookies are origin-scoped per browser profile:
+   - **Window A (`/student`):** Signed in as a **Student** account (`Register` or `Sign In`).
+   - **Window B (`/kitchen` or `/manager`):** Signed in as **Canteen Staff** (`CANTEEN_STAFF`) or **Manager** (`MANAGER`).
+4. As **Manager**, if previous test orders exist, click **Reset Demo** in Kitchen (available to `MANAGER` only; preserves user accounts and sessions) and confirm to start with an empty queue and `0 / 12` capacity across all pickup slots.
 
 ---
 
@@ -66,9 +67,9 @@
 **Action (Switch to Manager tab):**
 1. Show **Overview** KPIs (real-time `Today's Total Sales`, `Orders Today`, `Available / Total Menu Items`, `Current Pickup Slot Workload`) and **Sales** summary (7-day IST breakdown & top items).
 2. Under **Menu**, toggle an item **Sold Out** or edit its price, dietary flags (`Vegan`, `Jain-Friendly`), and `Allergen Information`, and show that **Student** menu updates immediately while past orders retain their original snapshots.
-3. Under **Student**, show **Order History** (browser-saved + manual ID lookup) and **Demo Payment** simulator (`Cash at Counter` / `Demo UPI`, clearly labeled no real money charged).
-4. Under **Slot Settings**, demonstrate closing a pickup slot (with confirmation modal) so new orders skip it, or reopening it—then optionally click **Reset Demo** in Kitchen for the next judge.
+3. Under **Student**, show account-linked **Order History** (`GET /api/orders/mine`) and **Demo Payment** simulator (`Cash at Counter` / `Demo UPI`, clearly labeled no real money charged).
+4. Under **Slot Settings** and **Staff**, demonstrate closing/reopening a pickup slot and provisioning or deactivating a `CANTEEN_STAFF` account—then optionally click **Reset Demo** in Kitchen (visible to `MANAGER` only; user accounts and sessions stay intact) for the next judge.
 
 **Say:**
-> "QUEUELESS connects student pre-ordering, atomic capacity-aware slot scheduling, live kitchen operations, and manager menu and slot controls through one shared backend. Next steps would be adding campus SSO/RBAC for staff routes and calibrating prep weights from real canteen data."
+> "QUEUELESS connects role-authenticated student pre-ordering, atomic capacity-aware slot scheduling, live kitchen operations, and manager menu, slot, and staff controls through one shared backend backed by Argon2id, HttpOnly cookies, CSRF checks, and student order ownership."
 

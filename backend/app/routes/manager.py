@@ -1,7 +1,14 @@
-"""Manager dashboard, menu CRUD, order oversight, sales, and slot settings routes."""
+"""Manager dashboard, menu CRUD, order oversight, sales, slot controls, and staff provisioning."""
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.auth_deps import require_csrf, require_manager
+from app.auth_service import (
+    AuthError,
+    create_staff_account,
+    list_staff_accounts,
+    update_staff_account_status,
+)
 from app.config import get_settings
 from app.manager_service import (
     create_manager_menu_item,
@@ -18,6 +25,7 @@ from app.manager_service import (
 )
 from app.models import OrderValidationError
 from app.schemas import (
+    AuthenticatedUserResponse,
     CapacityUpdateRequest,
     ManagerDashboardResponse,
     ManagerSalesSummaryResponse,
@@ -29,9 +37,15 @@ from app.schemas import (
     OrderDetailResponse,
     SlotClosureRequest,
     SlotWorkloadResponse,
+    StaffCreateRequest,
+    UserStatusUpdateRequest,
 )
 
-router = APIRouter(prefix="/manager", tags=["manager"])
+router = APIRouter(
+    prefix="/manager",
+    tags=["manager"],
+    dependencies=[Depends(require_manager)],
+)
 
 
 @router.get("/dashboard", response_model=ManagerDashboardResponse)
@@ -50,18 +64,23 @@ def manager_list_menu() -> list[MenuItemResponse]:
     "/menu",
     response_model=MenuItemResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf)],
 )
 def manager_create_menu_item(payload: MenuItemUpsertRequest) -> MenuItemResponse:
     """Add a new dish to the canteen menu."""
     return create_manager_menu_item(payload)
 
 
-@router.put("/menu/{item_id}", response_model=MenuItemResponse)
+@router.put(
+    "/menu/{item_id}",
+    response_model=MenuItemResponse,
+    dependencies=[Depends(require_csrf)],
+)
 def manager_update_menu_item(
     item_id: str,
     payload: MenuItemUpsertRequest,
 ) -> MenuItemResponse:
-    """Edit an existing menu item without altering historical order snapshots."""
+    """Update an existing menu item without changing past order records."""
     try:
         return update_manager_menu_item(item_id, payload)
     except OrderValidationError as exc:
@@ -71,12 +90,16 @@ def manager_update_menu_item(
         ) from exc
 
 
-@router.patch("/menu/{item_id}/availability", response_model=MenuItemResponse)
-def manager_toggle_availability(
+@router.patch(
+    "/menu/{item_id}/availability",
+    response_model=MenuItemResponse,
+    dependencies=[Depends(require_csrf)],
+)
+def manager_toggle_menu_availability(
     item_id: str,
     payload: MenuItemAvailabilityRequest,
 ) -> MenuItemResponse:
-    """Mark a menu item available or sold out."""
+    """Mark a menu item available or sold out immediately."""
     try:
         return update_menu_item_availability(item_id, payload.available)
     except OrderValidationError as exc:
@@ -86,7 +109,11 @@ def manager_toggle_availability(
         ) from exc
 
 
-@router.delete("/menu/{item_id}", response_model=MenuItemDeleteResponse)
+@router.delete(
+    "/menu/{item_id}",
+    response_model=MenuItemDeleteResponse,
+    dependencies=[Depends(require_csrf)],
+)
 def manager_delete_menu_item(item_id: str) -> MenuItemDeleteResponse:
     """Soft-delete/archive a menu item while preserving historical order records."""
     try:
@@ -141,7 +168,11 @@ def manager_get_slots() -> ManagerSlotSettingsResponse:
     return get_manager_slot_settings(get_settings())
 
 
-@router.patch("/settings/capacity", response_model=ManagerSlotSettingsResponse)
+@router.patch(
+    "/settings/capacity",
+    response_model=ManagerSlotSettingsResponse,
+    dependencies=[Depends(require_csrf)],
+)
 def manager_update_capacity(
     payload: CapacityUpdateRequest,
 ) -> ManagerSlotSettingsResponse:
@@ -149,7 +180,11 @@ def manager_update_capacity(
     return update_slot_capacity_setting(payload.slot_capacity_units, get_settings())
 
 
-@router.patch("/slots/status", response_model=SlotWorkloadResponse)
+@router.patch(
+    "/slots/status",
+    response_model=SlotWorkloadResponse,
+    dependencies=[Depends(require_csrf)],
+)
 def manager_update_slot_status(
     payload: SlotClosureRequest,
 ) -> SlotWorkloadResponse:
@@ -167,3 +202,52 @@ def manager_update_slot_status(
             detail={"error": exc.code, "message": exc.message},
         ) from exc
 
+
+@router.get("/staff", response_model=list[AuthenticatedUserResponse])
+def manager_list_staff() -> list[AuthenticatedUserResponse]:
+    """List canteen staff and manager accounts."""
+    return list_staff_accounts()
+
+
+@router.post(
+    "/staff",
+    response_model=AuthenticatedUserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf)],
+)
+def manager_create_staff(
+    payload: StaffCreateRequest,
+) -> AuthenticatedUserResponse:
+    """Create a CANTEEN_STAFF (or explicitly confirmed MANAGER) account."""
+    try:
+        return create_staff_account(payload, get_settings())
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"error": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.patch(
+    "/staff/{user_id}/status",
+    response_model=AuthenticatedUserResponse,
+    dependencies=[Depends(require_csrf)],
+)
+def manager_update_staff_status(
+    user_id: str,
+    payload: UserStatusUpdateRequest,
+    current_user: AuthenticatedUserResponse = Depends(require_manager),
+) -> AuthenticatedUserResponse:
+    """Activate or deactivate a staff/manager account and revoke sessions if deactivated."""
+    try:
+        return update_staff_account_status(
+            user_id,
+            payload.is_active,
+            current_user.id,
+            get_settings(),
+        )
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"error": exc.code, "message": exc.message},
+        ) from exc

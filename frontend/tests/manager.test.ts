@@ -49,9 +49,10 @@ test('AppShell supports Student, Kitchen, and Manager views and Manager section 
     'orders',
     'sales',
     'slots',
+    'staff',
   ]
   assert.equal(appViews.includes('manager'), true)
-  assert.equal(managerTabs.length, 5)
+  assert.equal(managerTabs.length, 6)
 })
 
 test('validateMenuFormInput converts Rupees to paise and rejects invalid inputs', () => {

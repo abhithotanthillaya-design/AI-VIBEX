@@ -8,11 +8,11 @@ Campus canteens experience intense, short-duration demand spikes between lecture
 
 ## 2. Proposed Solution
 
-**QUEUELESS** is a dual-interface web application for campus pre-ordering and kitchen queue orchestration:
+**QUEUELESS** is a role-authenticated campus pre-ordering and kitchen queue orchestration web application with three workspaces:
 
-- **Student Interface:** Fast mobile-friendly menu browsing with Veg/Non-Veg, Vegan, Jain-Friendly, and manager-verified allergen disclosure, **"Order in your own words"** plain-language input with confirmation preview, chronological **Pickup Window** selector (`Available`, `Limited availability`, `Full`, `Closed`), cart & special instruction requests, simulated Demo UPI / Counter Cash flow, pickup-code & cryptographic QR issuance, live status tracking, and browser-local **Order History**.
-- **Kitchen Interface:** Slot-grouped live order queue, preparation notes visibility, sequential status controls, camera/manual QR pickup verification (`POST /api/kitchen/verify-pickup`), pickup-slot workload meters, and demo reset control.
-- **Manager Interface (Demo Prototype Access):** Real-time operational KPIs in IST, full menu CRUD with snapshot-safe soft deletion, searchable order oversight, collected-only 7-day sales summary, and DB-backed slot capacity/closure controls.
+- **Student Interface (`STUDENT` role):** Self-registered student account with live menu browsing (Veg/Non-Veg, Vegan, Jain-Friendly, and manager-verified allergen disclosure), **"Order in your own words"** plain-language input with confirmation preview, chronological **Pickup Window** selector (`Available`, `Limited availability`, `Full`, `Closed`), cart & special instruction requests, simulated Demo UPI / Counter Cash flow, pickup-code & cryptographic QR issuance, live status tracking, and account-owned **Order History** (`GET /api/orders/mine`).
+- **Kitchen Interface (`CANTEEN_STAFF` & `MANAGER` roles):** Slot-grouped live order queue, preparation notes visibility, sequential status controls, camera/manual QR pickup verification (`POST /api/kitchen/verify-pickup`), and pickup-slot workload meters.
+- **Manager Interface (`MANAGER` role):** Initialized securely via CLI bootstrap (`python -m app.bootstrap_manager`), offering real-time operational KPIs in IST, full menu CRUD with snapshot-safe soft deletion, searchable order oversight, collected-only 7-day sales summary, DB-backed slot capacity/closure controls, staff/manager provisioning & deactivation, and Manager-only non-production demo reset.
 
 ---
 
@@ -45,12 +45,14 @@ Rather than acting as a plain online order form, QUEUELESS enforces **capacity-a
 
 ## 6. Current Limitations
 
-- Prototype operates in **demo mode** without real payment processing, institutional SSO authentication, or SMS/WhatsApp push notifications.
-- Kitchen (`/api/kitchen/*`) and Manager (`/api/manager/*`) routes are intentionally open for hackathon demonstration (**Demo Prototype Access**) and require authentication + role-based authorization before production deployment.
+- Prototype operates with simulated demo payments (`Demo UPI` / `Cash at Counter`) and without SMS/WhatsApp push notifications or institutional OAuth/SSO.
+- Self-service password reset / email verification is not implemented; account deactivation or password updates for locked accounts require manual admin action or logged-in profile updates.
+- Login rate limiting (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS`) is in-memory per Python worker process (single-instance deployment).
 - Camera-based QR scanning uses `getUserMedia`, which requires **HTTPS** outside `localhost`/`127.0.0.1`; manual token entry and manual counter pickup codes remain available as fallbacks.
+- `SESSION_COOKIE_SECURE` auto-enables in `ENVIRONMENT=production`, so production deployments must serve over **HTTPS** for session cookies and camera scanning to work.
 - Preparation unit weights (`prep_minutes`) and default slot capacity (`12` units, configurable via Manager Slot Settings) are prototype values rather than calibrated against historical kitchen throughput.
 - Single-canteen scope; multi-counter kitchen routing is not modeled.
-- Demo reset (`POST /api/demo/reset`) is intended strictly for non-production hackathon demonstrations.
+- Demo reset (`POST /api/demo/reset`) is restricted strictly to authenticated `MANAGER` users in non-production environments with `ENABLE_DEMO_RESET=true` and preserves `users` and `sessions`.
 - **Plain-language ordering** uses a deterministic local parser matched against the live SQLite menu rather than a cloud LLM; unrecognized phrasing is flagged for confirmation/manual selection, and valid extracted pickup times preselect a matching 5-minute checkout slot within the 2-hour bookable window (`MAX_EXTENSION_SLOTS = 24`) subject to atomic server re-validation at checkout.
 
 ---
@@ -59,6 +61,6 @@ Rather than acting as a plain online order form, QUEUELESS enforces **capacity-a
 
 - Calibrate preparation unit weights and slot capacities using observed timestamp deltas (`ACCEPTED → PREPARING → READY`).
 - Support multiple preparation stations (e.g., beverages vs. hot grill) with independent capacity pools.
-- Add role-based campus authentication, digital campus wallet/UPI payment integration, and live push/WebSocket notifications.
-- Provide an admin menu availability & capacity tuning panel for canteen managers.
+- Add institutional campus SSO, email verification / forgot-password flows, digital campus wallet/UPI payment integration, and live push/WebSocket notifications.
+- Replace in-process login rate limiting with a distributed store (e.g. Redis) for multi-worker horizontal scaling.
 

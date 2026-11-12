@@ -10,21 +10,24 @@ from app.config import get_settings
 from app.database import get_connection, init_db
 from app.main import create_app
 from app.seed import seed_menu_items
+from tests.auth_helpers import create_manager_client, create_staff_client, create_student_client
 
 
-def _setup_app(monkeypatch, tmpdir: str) -> TestClient:
+def _setup_app(monkeypatch, tmpdir: str):
     db_file = Path(tmpdir) / "test_phase10.db"
     monkeypatch.setenv("DATABASE_PATH", str(db_file))
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("ENABLE_DEMO_RESET", "true")
     get_settings.cache_clear()
-    return TestClient(create_app())
+    return create_app()
 
 
 def test_dietary_labels_allergens_and_menu_dietary_filtering(monkeypatch) -> None:
     """Managers control vegan/jain/allergen metadata; never guessed; filterable via /api/menu."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with _setup_app(monkeypatch, tmpdir) as client:
+        app = _setup_app(monkeypatch, tmpdir)
+        with TestClient(app) as _lifespan:
+            client = create_manager_client(app)
             # Seeded items default to unverified vegan/jain=False and allergen_info=None
             seeded = client.get("/api/menu").json()
             assert len(seeded) == 11
@@ -107,7 +110,12 @@ def test_special_instructions_sanitized_and_preserved_and_no_unrestricted_order_
 ) -> None:
     """Notes sanitize control characters, persist through kitchen/tracking, and orders cannot be listed openly."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with _setup_app(monkeypatch, tmpdir) as client:
+        app = _setup_app(monkeypatch, tmpdir)
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            client = create_student_client(app)
+
             # Verify there is NO open GET /api/orders student enumeration endpoint
             assert client.get("/api/orders").status_code in (404, 405)
 
@@ -126,7 +134,7 @@ def test_special_instructions_sanitized_and_preserved_and_no_unrestricted_order_
             assert tracked["customer_name"] == "Meera Nair"
             assert tracked["notes"] == "No onion please, peanut sensitivity"
 
-            kitchen_orders = client.get("/api/kitchen/orders").json()
+            kitchen_orders = staff.get("/api/kitchen/orders").json()
             matched = [o for o in kitchen_orders if o["id"] == order_id][0]
             assert matched["notes"] == "No onion please, peanut sensitivity"
 
@@ -136,7 +144,9 @@ def test_special_instructions_sanitized_and_preserved_and_no_unrestricted_order_
 def test_simulated_demo_payment_lifecycle_and_duplicate_protection(monkeypatch) -> None:
     """Demo payment keeps order status separate, starts pending for DEMO_UPI, and prevents double-pay."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with _setup_app(monkeypatch, tmpdir) as client:
+        app = _setup_app(monkeypatch, tmpdir)
+        with TestClient(app) as _lifespan:
+            client = create_student_client(app)
             # Default COUNTER_CASH order starts with PAY_AT_COUNTER
             cash_order = client.post(
                 "/api/orders",

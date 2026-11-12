@@ -1,7 +1,8 @@
-"""Kitchen operations endpoints for queue management, status updates, and slot workload."""
+"""Kitchen operations endpoints protected by staff/manager role authorization."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.auth_deps import require_csrf, require_kitchen_access
 from app.config import get_settings
 from app.models import (
     OrderValidationError,
@@ -18,7 +19,11 @@ from app.schemas import (
     VerifyPickupResponse,
 )
 
-router = APIRouter(prefix="/kitchen", tags=["kitchen"])
+router = APIRouter(
+    prefix="/kitchen",
+    tags=["kitchen"],
+    dependencies=[Depends(require_kitchen_access)],
+)
 
 
 @router.get("/orders", response_model=list[OrderDetailResponse])
@@ -38,7 +43,11 @@ def get_kitchen_orders(
         ) from exc
 
 
-@router.patch("/orders/{order_id}/status", response_model=OrderDetailResponse)
+@router.patch(
+    "/orders/{order_id}/status",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_csrf)],
+)
 def patch_kitchen_order_status(
     order_id: str,
     payload: OrderStatusUpdateRequest,
@@ -59,7 +68,11 @@ def get_kitchen_slots() -> list[SlotWorkloadResponse]:
     return list_kitchen_slots(get_settings())
 
 
-@router.post("/verify-pickup", response_model=VerifyPickupResponse)
+@router.post(
+    "/verify-pickup",
+    response_model=VerifyPickupResponse,
+    dependencies=[Depends(require_csrf)],
+)
 def verify_pickup_qr(payload: VerifyPickupRequest) -> VerifyPickupResponse:
     """Verify a one-time QR pickup token and collect a READY order atomically."""
     try:
@@ -69,4 +82,3 @@ def verify_pickup_qr(payload: VerifyPickupRequest) -> VerifyPickupResponse:
             status_code=exc.status_code,
             detail={"error": exc.code, "message": exc.message},
         ) from exc
-

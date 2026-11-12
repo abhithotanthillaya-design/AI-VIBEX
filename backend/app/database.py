@@ -98,8 +98,34 @@ def init_db() -> None:
                 closed_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                student_roll_no TEXT,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (
+                    role IN ('STUDENT', 'CANTEEN_STAFF', 'MANAGER')
+                ),
+                is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                session_token_hash TEXT NOT NULL UNIQUE,
+                csrf_token TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                revoked_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS orders (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 pickup_code TEXT NOT NULL UNIQUE,
                 customer_name TEXT NOT NULL,
                 status TEXT NOT NULL CHECK (
@@ -116,7 +142,8 @@ def init_db() -> None:
                 pickup_token_hash TEXT,
                 pickup_token_used_at TEXT,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS order_items (
@@ -131,6 +158,12 @@ def init_db() -> None:
                 FOREIGN KEY (menu_item_id) REFERENCES menu_items(id)
             );
 
+            CREATE INDEX IF NOT EXISTS idx_users_role
+                ON users(role, is_active);
+            CREATE INDEX IF NOT EXISTS idx_sessions_user_id
+                ON sessions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
+                ON sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_orders_status
                 ON orders(status);
             CREATE INDEX IF NOT EXISTS idx_orders_pickup_slot
@@ -190,6 +223,13 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE orders ADD COLUMN pickup_token_used_at TEXT;"
             )
+        if "user_id" not in existing_order_cols:
+            conn.execute(
+                "ALTER TABLE orders ADD COLUMN user_id TEXT REFERENCES users(id);"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id, created_at);"
+        )
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_pickup_token_hash ON orders(pickup_token_hash);"
         )

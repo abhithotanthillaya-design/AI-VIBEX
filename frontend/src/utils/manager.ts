@@ -187,6 +187,7 @@ export type ManagerSectionTab =
   | 'orders'
   | 'sales'
   | 'slots'
+  | 'staff'
 
 export function validateCapacityInput(rawValue: string): {
   ok: true

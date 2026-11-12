@@ -2,6 +2,7 @@
 
 from datetime import datetime, tzinfo
 from functools import lru_cache
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,12 +20,30 @@ class Settings(BaseSettings):
     slot_capacity_units: int = 12
     slot_lookahead_minutes: int = 45
     enable_demo_reset: bool = True
+    session_cookie_name: str = "queueless_session"
+    session_ttl_hours: int = 12
+    session_cookie_secure: bool | None = None
+    session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    login_rate_limit_max_attempts: int = 5
+    login_rate_limit_window_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def is_production(self) -> bool:
+        """Return True when running in production environment."""
+        return self.environment.strip().lower() == "production"
+
+    @property
+    def cookie_secure(self) -> bool:
+        """Enable Secure cookie flag automatically in production or when explicitly set."""
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.is_production
 
     @property
     def cors_origin_list(self) -> list[str]:

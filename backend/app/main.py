@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
+from app.routes.auth import router as auth_router
 from app.routes.demo import router as demo_router
 from app.routes.health import router as health_router
 from app.routes.kitchen import router as kitchen_router
@@ -43,7 +44,7 @@ def create_app() -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
         )
 
     application.include_router(health_router, prefix="/api")
+    application.include_router(auth_router, prefix="/api")
     application.include_router(menu_router, prefix="/api")
     application.include_router(slots_router, prefix="/api")
     application.include_router(orders_router, prefix="/api")

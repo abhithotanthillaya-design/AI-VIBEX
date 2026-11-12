@@ -7,23 +7,27 @@ import {
   Clock,
   LayoutDashboard,
   RefreshCw,
-  ShieldAlert,
+  ShieldCheck,
+  Users,
   UtensilsCrossed,
 } from 'lucide-react'
 import {
   ApiClientError,
   createManagerMenuItem,
+  createManagerStaff,
   deleteManagerMenuItem,
   fetchManagerDashboard,
   fetchManagerMenu,
   fetchManagerOrders,
   fetchManagerSales,
   fetchManagerSlots,
+  fetchManagerStaff,
   toggleManagerMenuAvailability,
   updateKitchenOrderStatus,
   updateManagerCapacity,
   updateManagerMenuItem,
   updateManagerSlotStatus,
+  updateManagerStaffStatus,
 } from '../api/client'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ManagerMenuSection } from '../components/manager/ManagerMenuSection'
@@ -31,10 +35,12 @@ import { ManagerOrdersSection } from '../components/manager/ManagerOrdersSection
 import { ManagerOverviewSection } from '../components/manager/ManagerOverviewSection'
 import { ManagerSalesSection } from '../components/manager/ManagerSalesSection'
 import { ManagerSlotsSection } from '../components/manager/ManagerSlotsSection'
+import { ManagerStaffSection } from '../components/manager/ManagerStaffSection'
 import { MenuItemFormModal } from '../components/manager/MenuItemFormModal'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import type {
+  AuthenticatedUser,
   ManagerDashboard,
   ManagerSalesSummary,
   ManagerSlotSettings,
@@ -43,13 +49,18 @@ import type {
   OrderDetail,
   OrderStatus,
   SlotWorkload,
+  StaffCreateRequest,
 } from '../types'
 import { formatTimeWindow } from '../utils/format'
 import type { ManagerSectionTab } from '../utils/manager'
 
 const MANAGER_POLL_INTERVAL_MS = 8000
 
-export function ManagerPage() {
+interface ManagerPageProps {
+  currentUser?: AuthenticatedUser | null
+}
+
+export function ManagerPage({ currentUser }: ManagerPageProps) {
   const [activeTab, setActiveTab] = useState<ManagerSectionTab>('overview')
 
   const [dashboard, setDashboard] = useState<ManagerDashboard | null>(null)
@@ -59,6 +70,11 @@ export function ManagerPage() {
   const [slotSettings, setSlotSettings] = useState<ManagerSlotSettings | null>(
     null,
   )
+  const [staffAccounts, setStaffAccounts] = useState<AuthenticatedUser[]>([])
+  const [isCreatingStaff, setIsCreatingStaff] = useState(false)
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null)
+  const [pendingStatusToggle, setPendingStatusToggle] =
+    useState<AuthenticatedUser | null>(null)
 
   const [orderStatusFilter, setOrderStatusFilter] = useState('all')
   const [orderDateFilter, setOrderDateFilter] = useState('')
@@ -100,7 +116,7 @@ export function ManagerPage() {
       inFlightRef.current = true
 
       try {
-        const [dashRes, menuRes, ordersRes, salesRes, slotsRes] =
+        const [dashRes, menuRes, ordersRes, salesRes, slotsRes, staffRes] =
           await Promise.all([
             fetchManagerDashboard(),
             fetchManagerMenu(),
@@ -111,6 +127,7 @@ export function ManagerPage() {
             }),
             fetchManagerSales(),
             fetchManagerSlots(),
+            fetchManagerStaff(),
           ])
 
         if (!mountedRef.current) return
@@ -119,6 +136,7 @@ export function ManagerPage() {
         setOrders(ordersRes)
         setSales(salesRes)
         setSlotSettings(slotsRes)
+        setStaffAccounts(staffRes)
         setLoadError(null)
       } catch (err) {
         if (!mountedRef.current) return
@@ -154,14 +172,16 @@ export function ManagerPage() {
         }),
         fetchManagerSales(),
         fetchManagerSlots(),
+        fetchManagerStaff(),
       ])
-        .then(([dashRes, menuRes, ordersRes, salesRes, slotsRes]) => {
+        .then(([dashRes, menuRes, ordersRes, salesRes, slotsRes, staffRes]) => {
           if (!active || !mountedRef.current) return
           setDashboard(dashRes)
           setMenuItems(menuRes)
           setOrders(ordersRes)
           setSales(salesRes)
           setSlotSettings(slotsRes)
+          setStaffAccounts(staffRes)
           setLoadError(null)
         })
         .catch((err: unknown) => {
@@ -452,6 +472,61 @@ export function ManagerPage() {
     ],
   )
 
+  const handleCreateStaff = useCallback(
+    async (payload: StaffCreateRequest): Promise<boolean> => {
+      if (isCreatingStaff) return false
+      setIsCreatingStaff(true)
+      setActionError(null)
+      setSuccessNotice(null)
+      try {
+        const created = await createManagerStaff(payload)
+        setStaffAccounts((prev) => [created, ...prev])
+        setSuccessNotice(
+          `Provisioned ${created.role === 'MANAGER' ? 'Manager' : 'Canteen Staff'} account for ${created.email}.`,
+        )
+        return true
+      } catch (err) {
+        setActionError(
+          err instanceof ApiClientError
+            ? err.message
+            : 'Unable to create staff account.',
+        )
+        return false
+      } finally {
+        setIsCreatingStaff(false)
+      }
+    },
+    [isCreatingStaff],
+  )
+
+  const handleConfirmToggleStaffStatus = useCallback(async () => {
+    if (!pendingStatusToggle || togglingUserId) return
+    const target = pendingStatusToggle
+    const nextActive = !target.is_active
+    setTogglingUserId(target.id)
+    setActionError(null)
+    setSuccessNotice(null)
+    try {
+      const updated = await updateManagerStaffStatus(target.id, nextActive)
+      setStaffAccounts((prev) =>
+        prev.map((acct) => (acct.id === updated.id ? updated : acct)),
+      )
+      setPendingStatusToggle(null)
+      setSuccessNotice(
+        `${updated.full_name} has been ${updated.is_active ? 'reactivated' : 'deactivated and signed out of active sessions'}.`,
+      )
+    } catch (err) {
+      setActionError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Unable to update staff account status.',
+      )
+      setPendingStatusToggle(null)
+    } finally {
+      setTogglingUserId(null)
+    }
+  }, [pendingStatusToggle, togglingUserId])
+
   const tabs: {
     id: ManagerSectionTab
     label: string
@@ -466,16 +541,19 @@ export function ManagerPage() {
     { id: 'orders', label: 'Orders', icon: ClipboardList },
     { id: 'sales', label: 'Sales', icon: BarChart3 },
     { id: 'slots', label: 'Slot Settings', icon: Clock },
+    { id: 'staff', label: `Staff (${staffAccounts.length})`, icon: Users },
   ]
 
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
-            <ShieldAlert className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
             <span>
-              Demo Prototype Access · Authentication required for production
+              {currentUser
+                ? `Authenticated Manager · ${currentUser.full_name}`
+                : 'Authenticated Manager Console'}
             </span>
           </div>
           <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
@@ -646,6 +724,18 @@ export function ManagerPage() {
               }}
             />
           )}
+
+          {activeTab === 'staff' && (
+            <ManagerStaffSection
+              staffAccounts={staffAccounts}
+              currentManagerId={currentUser?.id ?? ''}
+              isLoading={isInitialLoading}
+              isSubmitting={isCreatingStaff}
+              togglingUserId={togglingUserId}
+              onCreateStaff={handleCreateStaff}
+              onRequestToggleStatus={setPendingStatusToggle}
+            />
+          )}
         </>
       )}
 
@@ -709,6 +799,37 @@ export function ManagerPage() {
           if (pendingCloseSlot) {
             void handleSlotClosureChange(pendingCloseSlot, true)
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingStatusToggle !== null}
+        title={
+          pendingStatusToggle?.is_active
+            ? 'Deactivate account?'
+            : 'Reactivate account?'
+        }
+        description={
+          pendingStatusToggle
+            ? pendingStatusToggle.is_active
+              ? `Deactivate ${pendingStatusToggle.full_name} (${pendingStatusToggle.email})? All active sessions for this user will be immediately revoked.`
+              : `Restore login access for ${pendingStatusToggle.full_name} (${pendingStatusToggle.email})?`
+            : ''
+        }
+        confirmLabel={
+          pendingStatusToggle?.is_active ? 'Deactivate Account' : 'Reactivate Account'
+        }
+        confirmVariant={pendingStatusToggle?.is_active ? 'danger' : 'primary'}
+        isConfirming={
+          pendingStatusToggle
+            ? togglingUserId === pendingStatusToggle.id
+            : false
+        }
+        onCancel={() => {
+          if (!togglingUserId) setPendingStatusToggle(null)
+        }}
+        onConfirm={() => {
+          void handleConfirmToggleStaffStatus()
         }}
       />
     </section>

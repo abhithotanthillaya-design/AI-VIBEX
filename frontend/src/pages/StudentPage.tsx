@@ -89,7 +89,11 @@ interface PlacedOrderSnapshot {
   notes?: string
 }
 
-export function StudentPage() {
+interface StudentPageProps {
+  currentUser?: { full_name: string; student_roll_no?: string | null } | null
+}
+
+export function StudentPage({ currentUser }: StudentPageProps) {
   const [subView, setSubView] = useState<StudentSubView>('menu')
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [isLoadingMenu, setIsLoadingMenu] = useState<boolean>(true)
@@ -99,7 +103,9 @@ export function StudentPage() {
   const [dietaryFilter, setDietaryFilter] = useState<DietaryFilter>('all')
   const [cart, setCart] = useState<CartItem[]>([])
 
-  const [customerName, setCustomerName] = useState<string>('')
+  const [customerName, setCustomerName] = useState<string>(
+    () => currentUser?.full_name ?? '',
+  )
   const [notes, setNotes] = useState<string>('')
   const [paymentMethod, setPaymentMethod] =
     useState<DemoPaymentMethod>('COUNTER_CASH')
@@ -530,7 +536,11 @@ export function StudentPage() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
             <span className="h-2 w-2 rounded-full bg-emerald-600" />
-            <span>Main Campus Canteen · Open for Pre-Orders</span>
+            <span>
+              {currentUser
+                ? `Signed in as ${currentUser.full_name}${currentUser.student_roll_no ? ` (${currentUser.student_roll_no})` : ''} · Open for Pre-Orders`
+                : 'Main Campus Canteen · Open for Pre-Orders'}
+            </span>
           </div>
           <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
             Freshly cooked, timed for pickup

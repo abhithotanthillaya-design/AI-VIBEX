@@ -4,16 +4,17 @@
 
 QUEUELESS follows a clean three-tier local web architecture:
 
-1. **Presentation Layer (`frontend/`):** React 19 + TypeScript single-page application built with Vite and Tailwind CSS v4. Provides a unified `AppShell` switching between **Student** (`StudentPage`, `OrderTrackingPage`), **Kitchen** (`KitchenPage`), and **Manager** (`ManagerPage`) workspaces.
-2. **Application & Scheduling Layer (`backend/app/`):** Python FastAPI service enforcing request validation (`schemas.py`), core/kitchen/demo logic (`models.py`), manager analytics & menu CRUD (`manager_service.py`), and deterministic pickup-slot scheduling (`allocator.py`).
-3. **Persistence Layer (`SQLite`):** Local SQLite database configured with Write-Ahead Logging (`PRAGMA journal_mode = WAL`) and foreign-key enforcement (`PRAGMA foreign_keys = ON`). Safe additive migrations in `init_db()` upgrade existing databases without dropping data.
+1. **Presentation Layer (`frontend/`):** React 19 + TypeScript single-page application built with Vite and Tailwind CSS v4. Provides URL-guarded routes (`/`, `/login`, `/register`, `/student`, `/kitchen`, `/manager`, `/profile`, `/unauthorized`) and role-filtered navigation in `AppShell`.
+2. **Application, Auth & Scheduling Layer (`backend/app/`):** Python FastAPI service enforcing Argon2id hashing + `HttpOnly` cookie sessions (`security.py`, `auth_service.py`, `auth_deps.py`), strict RBAC & CSRF guards, request validation (`schemas.py`), core/kitchen/demo logic (`models.py`), manager analytics & menu CRUD (`manager_service.py`), and deterministic pickup-slot scheduling (`allocator.py`).
+3. **Persistence Layer (`SQLite`):** Local SQLite database configured with Write-Ahead Logging (`PRAGMA journal_mode = WAL`) and foreign-key enforcement (`PRAGMA foreign_keys = ON`). Safe additive migrations in `init_db()` upgrade existing databases without dropping data (`users`, `sessions`, `orders.user_id`, etc.).
 
 ---
 
 ## 2. Frontend / Backend Communication
 
-- All HTTP communication is centralized in `frontend/src/api/client.ts` using `VITE_API_BASE_URL` (default `http://localhost:8000`).
-- FastAPI configures `CORSMiddleware` from `CORS_ORIGINS` (`http://localhost:5173,http://127.0.0.1:5173`).
+- All HTTP communication is centralized in `frontend/src/api/client.ts` using `VITE_API_BASE_URL` (default `http://localhost:8000`) with `credentials: 'include'` so browser requests send the `HttpOnly` session cookie.
+- FastAPI configures `CORSMiddleware` with `allow_credentials=True` for explicit trusted `CORS_ORIGINS` (`http://localhost:5173,http://127.0.0.1:5173`).
+- `csrf_token` is held strictly in JavaScript memory (`activeCsrfToken`, never `localStorage`) and attached as `X-CSRF-Token` on authenticated mutations. Any `401` response clears in-memory auth and browser-local student order/QR tokens and redirects to `/login`.
 - Standardized error envelopes (`{"error": "...", "message": "..."}`) are returned for HTTP, validation, and database errors and parsed into `ApiClientError` instances on the frontend.
 - Prices are stored and transmitted as **integer paise** (e.g., `₹50` = `5000`) to avoid floating-point rounding drift.
 - **Live updates:** Both `OrderTrackingPage` and `KitchenPage` poll the backend every **4 seconds** with in-flight request guards (`inFlightRef`) and interval cleanup on unmount.
@@ -137,12 +138,20 @@ Implemented in `backend/app/allocator.py`:
 
 ---
 
-## 9. Dietary Safety, Order History & Simulated Demo Payment Architecture
+## 9. Dietary Safety, Order Ownership & Simulated Demo Payment Architecture
 
 1. **Dietary & Allergen Metadata:** `menu_items` stores manager-maintained `is_veg`, `is_vegan`, `is_jain`, and optional `allergen_info`. Unverified values are never inferred or advertised as `"allergen-free"` (`"Not listed — confirm at counter"` when blank).
 2. **Sanitized Special Instructions:** `CreateOrderRequest` strips ASCII control characters from `customer_name` and `notes` (`max_length=300`) while preserving instructions end-to-end across confirmation, tracking, kitchen cards, and manager orders with explicit non-guarantee disclaimers.
-3. **Browser-Local Order History Privacy:** Because the hackathon prototype has no institutional student login, no unrestricted student list endpoint (`GET /api/orders`) exists; instead, `StudentOrderHistory` stores IDs placed/searched in the user's browser (`localStorage`) and fetches each record individually via `GET /api/orders/{order_id}`.
+3. **Student Order Ownership & History:** Every student order persists `orders.user_id` referencing `users.id`. `GET /api/orders/mine` lists only the authenticated student's orders, and `GET /api/orders/{order_id}` / `POST /api/orders/{order_id}/demo-payment` enforce `order.user_id == current_user.id` (returning `404` for unauthorized or legacy unowned orders).
 4. **Simulated Demo Payment State Machine:** `POST /api/orders/{order_id}/demo-payment` transitions unpaid orders (`PENDING`, `DEMO_FAILED`, `DEMO_CANCELLED`, `PAY_AT_COUNTER`) atomically inside `write_transaction()`, enforces `409 already_demo_paid` against duplicate clicks, never requests real PINs/cards/credentials, and isolates `payment_status` from `order.status`.
+
+---
+
+## 10. Authentication, Sessions & Role-Based Access Control (Phase 10.1)
+
+1. **`users` & `sessions` Tables:** Passwords use Argon2id (`argon2-cffi`); sessions generate `qls_<secrets.token_urlsafe(32)>` stored strictly as a SHA-256 hex digest (`session_token_hash`) paired with `csrf_token`, `expires_at`, and `revoked_at`.
+2. **Defense Against Privilege Escalation & CSRF:** `StudentRegisterRequest` forbids `role` via Pydantic `extra="forbid"` and creates only `STUDENT`. Every state-changing authenticated route depends on `require_csrf`, validating `X-CSRF-Token` (`hmac.compare_digest`) plus trusted `Origin`/`Referer`.
+3. **Initial Manager Bootstrap:** `python -m app.bootstrap_manager` provisions the first `MANAGER` via CLI flags, interactive hidden `getpass` prompt, or environment variables—never hardcoded credentials. Further staff/managers are created exclusively via `/api/manager/staff`.
 
 
 

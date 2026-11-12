@@ -289,3 +289,56 @@ export interface NaturalOrderParseResponse {
   total_prep_units: number
   can_add_to_cart: boolean
 }
+
+export type UserRole = 'STUDENT' | 'CANTEEN_STAFF' | 'MANAGER'
+
+export interface AuthenticatedUser {
+  id: string
+  full_name: string
+  email: string
+  student_roll_no?: string | null
+  role: UserRole
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AuthSessionResponse {
+  status: string
+  user: AuthenticatedUser
+  csrf_token: string
+  expires_at: string
+}
+
+export interface LogoutResponse {
+  status: string
+  message: string
+}
+
+export interface StudentRegisterRequest {
+  full_name: string
+  email: string
+  password: string
+  confirm_password: string
+  student_roll_no?: string | null
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface ProfileUpdateRequest {
+  full_name?: string
+  student_roll_no?: string | null
+  current_password?: string
+  new_password?: string
+}
+
+export interface StaffCreateRequest {
+  full_name: string
+  email: string
+  password: string
+  role: 'CANTEEN_STAFF' | 'MANAGER'
+  confirm_manager_grant?: boolean
+}

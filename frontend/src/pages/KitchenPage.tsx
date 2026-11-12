@@ -77,9 +77,15 @@ function KitchenQueueSkeleton() {
 
 interface KitchenPageProps {
   onDemoReset?: () => void
+  currentUserRole?: 'STUDENT' | 'CANTEEN_STAFF' | 'MANAGER'
+  currentUserName?: string
 }
 
-export function KitchenPage({ onDemoReset }: KitchenPageProps) {
+export function KitchenPage({
+  onDemoReset,
+  currentUserRole = 'CANTEEN_STAFF',
+  currentUserName,
+}: KitchenPageProps) {
   const [activeOrders, setActiveOrders] = useState<OrderDetail[]>([])
   const [collectedOrders, setCollectedOrders] = useState<OrderDetail[]>([])
   const [slots, setSlots] = useState<SlotWorkload[]>([])
@@ -373,6 +379,7 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" />
             <span>
+              {currentUserName ? `${currentUserName} · ` : ''}
               Live · Auto-refreshing every 4s
               {lastUpdatedAt ? ` · Updated ${lastUpdatedAt}` : ''}
             </span>
@@ -404,18 +411,20 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
           >
             Refresh Queue
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={isResettingDemo}
-            onClick={() => {
-              setActionError(null)
-              setIsResetDialogOpen(true)
-            }}
-            icon={<RotateCcw className="h-4 w-4 text-rose-700" aria-hidden="true" />}
-          >
-            Reset Demo
-          </Button>
+          {currentUserRole === 'MANAGER' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isResettingDemo}
+              onClick={() => {
+                setActionError(null)
+                setIsResetDialogOpen(true)
+              }}
+              icon={<RotateCcw className="h-4 w-4 text-rose-700" aria-hidden="true" />}
+            >
+              Reset Demo
+            </Button>
+          )}
         </div>
       </div>
 

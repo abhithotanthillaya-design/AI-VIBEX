@@ -13,6 +13,7 @@ from app.main import create_app
 from app.models import create_order
 from app.schemas import CreateOrderRequest, OrderItemCreate
 from app.seed import seed_menu_items
+from tests.auth_helpers import create_student_client
 
 
 def _setup_test_app(monkeypatch, tmpdir: str):
@@ -26,7 +27,8 @@ def test_valid_order_placement_server_pricing_and_tracking(monkeypatch) -> None:
     """Verify valid order creation calculates prices server-side and is retrievable via tracking API."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            client = create_student_client(app)
             # item_1: Veg Grilled Sandwich (5000 paise, 4 prep) x2 = 10000, 8 prep
             # item_9: Masala Chai (2000 paise, 2 prep) x1 = 2000, 2 prep
             # Total: 12000 paise, 10 prep units
@@ -68,7 +70,8 @@ def test_order_validation_rejects_invalid_and_unavailable_items_and_bad_quantiti
     """Verify unknown items, unavailable items, zero/negative quantities, and unknown order IDs fail cleanly."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            client = create_student_client(app)
             # Unknown menu item
             unknown_res = client.post(
                 "/api/orders",
@@ -210,7 +213,8 @@ def test_oversized_order_above_batch_limit_is_rejected(monkeypatch) -> None:
     """Verify orders exceeding 3x slot capacity are safely rejected instead of accepted."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            client = create_student_client(app)
             # 6 x Chole Bhature (7 prep each) = 42 units > 36 max cap
             res = client.post(
                 "/api/orders",

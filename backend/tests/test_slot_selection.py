@@ -15,9 +15,10 @@ from app.models import create_order
 from app.natural_order import parse_natural_order
 from app.schemas import CreateOrderRequest, OrderItemCreate
 from app.seed import seed_menu_items
+from tests.auth_helpers import create_manager_client, create_staff_client, create_student_client
 
 
-def _setup_test_app(monkeypatch, tmpdir: str, capacity: int = 12) -> TestClient:
+def _setup_test_app(monkeypatch, tmpdir: str, capacity: int = 12):
     db_file = Path(tmpdir) / "test_slots.db"
     monkeypatch.setenv("DATABASE_PATH", str(db_file))
     monkeypatch.setenv("SLOT_CAPACITY_UNITS", str(capacity))
@@ -25,7 +26,7 @@ def _setup_test_app(monkeypatch, tmpdir: str, capacity: int = 12) -> TestClient:
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("ENABLE_DEMO_RESET", "true")
     get_settings.cache_clear()
-    return TestClient(create_app())
+    return create_app()
 
 
 def test_available_slots_listing_chronological_states_and_workload_feasibility(
@@ -33,7 +34,11 @@ def test_available_slots_listing_chronological_states_and_workload_feasibility(
 ) -> None:
     """GET /api/slots/available returns chronological Asia/Kolkata slots with accurate states."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with _setup_test_app(monkeypatch, tmpdir, capacity=12) as client:
+        app = _setup_test_app(monkeypatch, tmpdir, capacity=12)
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            client = create_student_client(app)
+
             resp = client.get("/api/slots/available?workload_units=6")
             assert resp.status_code == 200
             data = resp.json()
@@ -81,7 +86,7 @@ def test_available_slots_listing_chronological_states_and_workload_feasibility(
 
             # Close slot 2 via manager control
             slot2 = slots[2]["slot_start"]
-            close_resp = client.patch(
+            close_resp = manager.patch(
                 "/api/manager/slots/status",
                 json={"slot_start": slot2, "is_closed": True, "reason": "Cleaning"},
             )
@@ -112,7 +117,12 @@ def test_exact_slot_selection_and_rejections_without_silent_reassignment(
 ) -> None:
     """Exact requested slots reserve atomically and invalid/full/closed requests never silently shift."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with _setup_test_app(monkeypatch, tmpdir, capacity=12) as client:
+        app = _setup_test_app(monkeypatch, tmpdir, capacity=12)
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            client = create_student_client(app)
+
             slots = client.get("/api/slots/available").json()["slots"]
             slot0 = slots[0]["slot_start"]
             slot1 = slots[1]["slot_start"]
@@ -155,7 +165,7 @@ def test_exact_slot_selection_and_rejections_without_silent_reassignment(
             assert full_attempt.json()["error"] == "slot_full"
 
             # Close slot1 -> placing order on closed slot1 fails cleanly; reopen -> succeeds
-            client.patch(
+            manager.patch(
                 "/api/manager/slots/status",
                 json={"slot_start": slot1, "is_closed": True, "reason": "Break"},
             )
@@ -171,15 +181,15 @@ def test_exact_slot_selection_and_rejections_without_silent_reassignment(
             assert closed_attempt.json()["error"] == "slot_closed"
 
             # Close slot2 too (which already has an order); kitchen must STILL see that existing order
-            client.patch(
+            manager.patch(
                 "/api/manager/slots/status",
                 json={"slot_start": slot2, "is_closed": True, "reason": "Maintenance"},
             )
-            kitchen_orders = client.get("/api/kitchen/orders").json()
+            kitchen_orders = staff.get("/api/kitchen/orders").json()
             assert any(o["id"] == chosen_order.json()["id"] for o in kitchen_orders)
 
             # Reopen slot1 -> available again and accepts booking
-            client.patch(
+            manager.patch(
                 "/api/manager/slots/status",
                 json={"slot_start": slot1, "is_closed": False},
             )
@@ -242,7 +252,12 @@ def test_manager_capacity_change_collection_and_cancellation_release_capacity(
 ) -> None:
     """Capacity updates preserve old orders, and COLLECTED/CANCELLED free student-visible capacity."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with _setup_test_app(monkeypatch, tmpdir, capacity=12) as client:
+        app = _setup_test_app(monkeypatch, tmpdir, capacity=12)
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            staff = create_staff_client(app, manager)
+            client = create_student_client(app)
+
             slots = client.get("/api/slots/available").json()["slots"]
             slot0 = slots[0]["slot_start"]
 
@@ -257,7 +272,7 @@ def test_manager_capacity_change_collection_and_cancellation_release_capacity(
             ).json()
 
             # Manager reduces default capacity from 12 to 6 -> existing order stays on slot0
-            cap_res = client.patch(
+            cap_res = manager.patch(
                 "/api/manager/settings/capacity",
                 json={"slot_capacity_units": 6},
             )
@@ -274,11 +289,11 @@ def test_manager_capacity_change_collection_and_cancellation_release_capacity(
 
             # Advance through QR collection -> releases all 12 units cleanly
             for st in ("ACCEPTED", "PREPARING", "READY"):
-                client.patch(
+                staff.patch(
                     f"/api/kitchen/orders/{created['id']}/status",
                     json={"status": st},
                 )
-            verify_res = client.post(
+            verify_res = staff.post(
                 "/api/kitchen/verify-pickup",
                 json={"token": created["pickup_token"]},
             )

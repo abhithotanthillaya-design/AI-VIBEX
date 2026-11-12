@@ -14,6 +14,7 @@ from app.manager_service import get_manager_dashboard, get_manager_sales_summary
 from app.models import create_order
 from app.schemas import CreateOrderRequest, OrderItemCreate
 from app.seed import seed_menu_items
+from tests.auth_helpers import create_manager_client, create_student_client
 
 
 def _setup_test_app(monkeypatch, tmpdir: str):
@@ -31,15 +32,18 @@ def test_manager_menu_crud_availability_and_historical_order_snapshots(
     """Verify manager CRUD, student availability sync, and historical order snapshot preservation."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            student = create_student_client(app)
+
             # 1. Manager sees all 12 non-deleted items (11 available + 1 unavailable)
-            mgr_menu = client.get("/api/manager/menu").json()
+            mgr_menu = manager.get("/api/manager/menu").json()
             assert len(mgr_menu) == 12
-            student_menu = client.get("/api/menu").json()
+            student_menu = student.get("/api/menu").json()
             assert len(student_menu) == 11
 
             # 2. Add a new Non-Veg item
-            create_res = client.post(
+            create_res = manager.post(
                 "/api/manager/menu",
                 json={
                     "name": "Chicken Tikka Roll",
@@ -58,10 +62,10 @@ def test_manager_menu_crud_availability_and_historical_order_snapshots(
             assert created_item["price"] == 11000
             item_id = created_item["id"]
 
-            assert len(client.get("/api/menu").json()) == 12
+            assert len(student.get("/api/menu").json()) == 12
 
             # 3. Student places an order containing the new item
-            order_res = client.post(
+            order_res = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Snapshot Student",
@@ -73,7 +77,7 @@ def test_manager_menu_crud_availability_and_historical_order_snapshots(
             assert order_res.json()["total_amount"] == 22000
 
             # 4. Manager edits name, price, classification, and prep time
-            update_res = client.put(
+            update_res = manager.put(
                 f"/api/manager/menu/{item_id}",
                 json={
                     "name": "Classic Egg Roll",
@@ -91,22 +95,22 @@ def test_manager_menu_crud_availability_and_historical_order_snapshots(
             assert update_res.json()["price"] == 7500
 
             # Historical order retains original snapshot (Chicken Tikka Roll @ 11000 paise)
-            historical_order = client.get(f"/api/orders/{order_id}").json()
+            historical_order = student.get(f"/api/orders/{order_id}").json()
             assert historical_order["total_amount"] == 22000
             assert historical_order["items"][0]["item_name"] == "Chicken Tikka Roll"
             assert historical_order["items"][0]["unit_price"] == 11000
 
             # 5. Toggle availability to False -> immediately disappears from student menu and cannot be ordered
-            avail_res = client.patch(
+            avail_res = manager.patch(
                 f"/api/manager/menu/{item_id}/availability",
                 json={"available": False},
             )
             assert avail_res.status_code == 200
             assert avail_res.json()["available"] is False
-            student_ids = {item["id"] for item in client.get("/api/menu").json()}
+            student_ids = {item["id"] for item in student.get("/api/menu").json()}
             assert item_id not in student_ids
 
-            blocked_order = client.post(
+            blocked_order = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Late Student",
@@ -117,13 +121,13 @@ def test_manager_menu_crud_availability_and_historical_order_snapshots(
             assert blocked_order.json()["error"] == "unavailable_menu_item"
 
             # 6. Soft-delete item -> removed from manager & student menus, order snapshot still intact
-            del_res = client.delete(f"/api/manager/menu/{item_id}")
+            del_res = manager.delete(f"/api/manager/menu/{item_id}")
             assert del_res.status_code == 200
             assert del_res.json()["archived"] is True
-            assert all(i["id"] != item_id for i in client.get("/api/manager/menu").json())
-            assert all(i["id"] != item_id for i in client.get("/api/menu").json())
+            assert all(i["id"] != item_id for i in manager.get("/api/manager/menu").json())
+            assert all(i["id"] != item_id for i in student.get("/api/menu").json())
 
-            historical_after_delete = client.get(f"/api/orders/{order_id}").json()
+            historical_after_delete = student.get(f"/api/orders/{order_id}").json()
             assert historical_after_delete["items"][0]["item_name"] == "Chicken Tikka Roll"
             assert historical_after_delete["total_amount"] == 22000
 
@@ -136,7 +140,8 @@ def test_manager_menu_validation_rejects_invalid_price_category_and_inputs(
     """Verify Pydantic validation rejects zero/negative price, bad category, and unsafe URLs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            client = create_manager_client(app)
             bad_price = client.post(
                 "/api/manager/menu",
                 json={
@@ -291,7 +296,8 @@ def test_manager_dashboard_sales_summary_and_order_filters(monkeypatch) -> None:
 
         # Verify /api/manager/orders filtering and search
         app = create_app()
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            client = create_manager_client(app)
             assert len(client.get("/api/manager/orders").json()) == 4
             assert len(client.get("/api/manager/orders", params={"status": "active"}).json()) == 1
             assert len(client.get("/api/manager/orders", params={"status": "completed"}).json()) == 2
@@ -312,15 +318,18 @@ def test_manager_slot_closure_reopening_and_capacity_updates(monkeypatch) -> Non
     """Verify closing slots skips them for new orders while preserving existing orders & capacities."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
-            slot_cfg = client.get("/api/manager/slots").json()
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            student = create_student_client(app)
+
+            slot_cfg = manager.get("/api/manager/slots").json()
             assert slot_cfg["slot_capacity_units"] == 12
             assert slot_cfg["slot_duration_minutes"] == 5
             first_slot = slot_cfg["slots"][0]["slot_start"]
             second_slot = slot_cfg["slots"][1]["slot_start"]
 
             # Place order 1 -> takes first_slot
-            o1 = client.post(
+            o1 = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "Before Close",
@@ -330,7 +339,7 @@ def test_manager_slot_closure_reopening_and_capacity_updates(monkeypatch) -> Non
             assert o1["pickup_slot_start"] == first_slot
 
             # Close first_slot
-            close_res = client.patch(
+            close_res = manager.patch(
                 "/api/manager/slots/status",
                 json={
                     "slot_start": first_slot,
@@ -343,10 +352,10 @@ def test_manager_slot_closure_reopening_and_capacity_updates(monkeypatch) -> Non
             assert close_res.json()["close_reason"] == "Equipment cleaning"
 
             # Existing order retains its slot!
-            assert client.get(f"/api/orders/{o1['id']}").json()["pickup_slot_start"] == first_slot
+            assert student.get(f"/api/orders/{o1['id']}").json()["pickup_slot_start"] == first_slot
 
             # New order MUST skip closed first_slot and receive second_slot
-            o2 = client.post(
+            o2 = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "During Close",
@@ -356,14 +365,14 @@ def test_manager_slot_closure_reopening_and_capacity_updates(monkeypatch) -> Non
             assert o2["pickup_slot_start"] == second_slot
 
             # Reopen first_slot -> next order can use first_slot again
-            reopen_res = client.patch(
+            reopen_res = manager.patch(
                 "/api/manager/slots/status",
                 json={"slot_start": first_slot, "is_closed": False},
             )
             assert reopen_res.status_code == 200
             assert reopen_res.json()["is_closed"] is False
 
-            o3 = client.post(
+            o3 = student.post(
                 "/api/orders",
                 json={
                     "customer_name": "After Reopen",
@@ -373,14 +382,14 @@ def test_manager_slot_closure_reopening_and_capacity_updates(monkeypatch) -> Non
             assert o3["pickup_slot_start"] == first_slot
 
             # Update slot capacity in DB to 8 -> existing orders keep slots & new capacity persists
-            cap_res = client.patch(
+            cap_res = manager.patch(
                 "/api/manager/settings/capacity",
                 json={"slot_capacity_units": 8},
             )
             assert cap_res.status_code == 200
             assert cap_res.json()["slot_capacity_units"] == 8
-            assert client.get("/api/kitchen/slots").json()[0]["capacity_units"] == 8
-            assert client.get(f"/api/orders/{o1['id']}").json()["pickup_slot_start"] == first_slot
+            assert manager.get("/api/kitchen/slots").json()[0]["capacity_units"] == 8
+            assert student.get(f"/api/orders/{o1['id']}").json()["pickup_slot_start"] == first_slot
 
         get_settings.cache_clear()
 

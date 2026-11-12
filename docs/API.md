@@ -13,6 +13,29 @@ All error responses follow a consistent JSON shape:
 
 *(Validation errors on `422` also include a `details` array from FastAPI/Pydantic.)*
 
+> **Authentication & CSRF:** Aside from `GET /api/health`, `GET /api/menu`, `POST /api/auth/register`, and `POST /api/auth/login`, endpoints require an active `HttpOnly` session cookie (`queueless_session` by default). All authenticated `POST`, `PUT`, `PATCH`, and `DELETE` requests must also include `X-CSRF-Token` matching the session CSRF token returned by login/register/`/api/auth/me` and pass trusted-origin verification.
+
+---
+
+## 0. Authentication & Profile
+
+### `POST /api/auth/register` (`201 Created`)
+Self-registers a **`STUDENT` account only** (request `role` overrides or extra fields are rejected with `422`). Hashes password with Argon2id, sets an `HttpOnly` session cookie, and returns `{ status, user, csrf_token, expires_at }`.
+- **Errors:** `409 Conflict` (`email_already_registered`), `422` (`validation_error`, e.g. mismatched passwords or policy failure: 8–128 chars, letters + numbers).
+
+### `POST /api/auth/login`
+Authenticates any active account (`STUDENT`, `CANTEEN_STAFF`, `MANAGER`) by normalized email and password, sets an `HttpOnly` session cookie, and returns `{ status, user, csrf_token, expires_at }`.
+- **Errors:** `401 Unauthorized` (`invalid_credentials` — generic error without disclosing whether the email exists), `403 Forbidden` (`account_inactive`), `429 Too Many Requests` (`rate_limit_exceeded`).
+
+### `GET /api/auth/me`
+Restores active session user details, role, and `csrf_token`. Returns `401` when unauthenticated/expired.
+
+### `POST /api/auth/logout` *(Requires Auth + CSRF)*
+Revokes the active server-side row in `sessions` and clears the `HttpOnly` cookie.
+
+### `GET /api/auth/profile` & `PATCH /api/auth/profile` *(Requires Auth + CSRF on PATCH)*
+Reads or updates `full_name`, student roll number (`STUDENT` only), or password (requires `current_password`, validates new password policy, rejects inactive sessions).
+
 ---
 
 ## 1. Health Check
@@ -149,9 +172,15 @@ Validates menu items and quantities, computes total price in paise server-side, 
 
 ---
 
-### `GET /api/orders/{order_id}`
+### `GET /api/orders/mine` *(Requires `STUDENT`)*
 
-Returns full order details, snapshotted items, pickup window, and live status for student tracking.
+Returns all orders belonging to the authenticated student (`orders.user_id = current_user.id`) ordered newest-first.
+
+---
+
+### `GET /api/orders/{order_id}` *(Requires `STUDENT` Owner)*
+
+Returns full order details, snapshotted items, pickup window, and live status for student tracking. Enforces ownership (`order.user_id == current_user.id`); unauthorized or legacy unowned orders return `404 Not Found` (`order_not_found`).
 
 **Response `200 OK`:**
 ```json
@@ -353,7 +382,16 @@ Returns upcoming 5-minute pickup slots (plus any earlier/later slots with active
 
 ---
 
-## 5. Manager Operations (Demo Prototype Access — Requires Auth in Production)
+## 5. Manager Operations (`MANAGER` Role + CSRF on Mutations)
+
+### `GET /api/manager/staff`
+Lists all `CANTEEN_STAFF` and `MANAGER` accounts ordered newest-first (no password hashes returned).
+
+### `POST /api/manager/staff` (`201 Created`)
+Provisions a `CANTEEN_STAFF` or `MANAGER` account (`full_name`, `email`, `password` enforcing 8–128 chars + letters + numbers, `role`, and `confirm_manager_grant: true` required when creating another `MANAGER`). Never permits creating `STUDENT` here (`422`).
+
+### `PATCH /api/manager/staff/{user_id}/status`
+Activates or deactivates a `CANTEEN_STAFF` / `MANAGER` account (`{ "is_active": false }`). Rejects self-deactivation (`400 cannot_deactivate_self`), revokes active SQLite sessions immediately upon deactivation, and rejects unknown IDs (`404 user_not_found`).
 
 ### `GET /api/manager/dashboard`
 Returns real-time KPIs calculated in `Asia/Kolkata` (`today_date`, `today_sales_paise`, `today_orders`, `active_orders`, `completed_orders`, `cancelled_orders`, `total_menu_items`, `available_menu_items`, `unavailable_menu_items`, `current_slot`, `busiest_slot`). Finalized sales count `COLLECTED` orders only.
@@ -392,9 +430,9 @@ Request: `{ "slot_start": "2026-11-12T12:50:00+05:30", "is_closed": true, "reaso
 
 ## 6. Hackathon Demo Reset (Non-Production Only)
 
-### `POST /api/demo/reset`
+### `POST /api/demo/reset` *(Requires `MANAGER` + CSRF, Non-Production Only)*
 
-Deletes all rows in `order_items` and `orders` inside an atomic SQLite transaction while preserving seeded `menu_items`.
+Deletes all rows in `order_items` and `orders` inside an atomic SQLite transaction while preserving seeded `menu_items`, `users`, and `sessions`.
 
 **Response `200 OK`:**
 ```json

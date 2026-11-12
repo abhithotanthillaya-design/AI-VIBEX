@@ -21,23 +21,24 @@ Campus canteen pre-ordering and capacity-aware pickup-slot management web applic
 
 ## 3. Solution Explanation
 
-QUEUELESS connects three focused web interfaces:
+QUEUELESS connects three role-authenticated web workspaces (plus public landing, login, student registration, profile, and unauthorized screens):
 
-1. **Student Experience:** Browse live available menu items (with Veg/Non-Veg indicators), search and filter by category, build a cart, enter student name and kitchen notes, receive a server-verified total, unique pickup code, and capacity-assigned 5-minute pickup window, and track live preparation progress.
-2. **Kitchen Operations Dashboard:** Monitor live 5-minute pickup slot capacities, view incoming active orders grouped by pickup window, advance orders sequentially (`PLACED → ACCEPTED → PREPARING → READY → COLLECTED`), and reset demo data safely between presentations.
-3. **Manager Console (Demo Prototype Access):** View real-time KPIs in `Asia/Kolkata`, perform full menu CRUD (add, edit, toggle sold-out, soft-delete preserving historical order snapshots), filter/inspect all orders, review 7-day finalized sales and top items, and adjust DB-backed slot capacity or close/reopen pickup windows.
+1. **Student Experience (`STUDENT` role — `/student`):** Browse live available menu items (with Veg/Vegan/Jain/Non-Veg indicators), use plain-language ordering, build a cart, pick a capacity-checked 5-minute pickup slot, place server-validated orders linked to your student account, view QR pickup passes, and inspect account-owned **Order History** (`GET /api/orders/mine`).
+2. **Kitchen Operations Dashboard (`CANTEEN_STAFF` or `MANAGER` role — `/kitchen`):** Monitor live 5-minute pickup slot capacities, view incoming active orders grouped by pickup window, scan/verify pickup QR passes (`POST /api/kitchen/verify-pickup`), and advance orders sequentially (`PLACED → ACCEPTED → PREPARING → READY → COLLECTED`).
+3. **Manager Console (`MANAGER` role — `/manager`):** View real-time KPIs in `Asia/Kolkata`, perform full menu CRUD, filter/inspect all orders, review 7-day finalized sales, adjust DB-backed slot capacity or close/reopen windows, provision or deactivate `CANTEEN_STAFF` / `MANAGER` accounts, and trigger non-production Demo Reset.
 
 ---
 
 ## 4. Key Features
 
+- **Role-Based Authentication & Accounts (Phase 10.1):** Unified login (`/login`), Student self-registration (`/register`), Profile & password updates (`/profile`), Argon2id password hashing, HttpOnly cookie sessions stored as SHA-256 hashes in SQLite, `X-CSRF-Token` + trusted-origin checks, strict backend RBAC (`STUDENT`, `CANTEEN_STAFF`, `MANAGER`), one-time CLI Manager bootstrap (`python -m app.bootstrap_manager`), and Manager Staff & Access provisioning/deactivation.
 - **Student Menu & Dietary Safety:** Live menu catalog seeded in SQLite with local Indian canteen food photography, category filters (`Meals`, `Fast Food`, `Snacks`, `Beverages`), dietary filters (`Veg`, `Vegan`, `Jain-Friendly`, `Non-Veg`), and manager-verified allergen disclosure (`"Not listed — confirm at counter"` when unverified).
 - **Order in Your Own Words (Phase 8):** Local deterministic plain-language parser (`POST /api/natural-order/parse`) matching live SQLite items/prices with confirmation preview and optional pickup-time matching before adding to cart.
 - **Cart, Special Instructions & Simulated Demo Payment:** Sanitized preparation/allergy instructions (max 300 chars, with non-guarantee counter notice), clearly labelled simulated payment methods (`Cash at Counter` / `Demo UPI` with no real money charged), duplicate-submission prevention, and server-side paise calculation.
 - **Capacity-Aware Slot Selection & Allocation (Phase 9):** Chronological upcoming 5-minute pickup-slot selector (`Available`, `Limited availability`, `Full`, `Closed`) plus atomic SQLite transaction locking (`BEGIN IMMEDIATE` + `_WRITE_LOCK`) without silent slot shifting.
-- **QR & Pickup Code Tracking + Order History:** One-time cryptographic QR pickup token + 4-character pickup code, 5-stage live tracking timeline (4s polling), and honest browser-local Order History with individual backend `GET /api/orders/{order_id}` sync and manual Order ID lookup (no open list endpoint).
-- **Kitchen Operations Dashboard:** Live slot-grouped queue, Special Instructions visibility, sequential status updates, camera + manual QR verification (`POST /api/kitchen/verify-pickup`), slot workload meters, and guarded Demo Reset.
-- **Manager Console (Demo Prototype Access):** Real-time operational KPIs (`Asia/Kolkata`), full menu CRUD with dietary & allergen fields, snapshot-safe soft deletion, order oversight, collected-only 7-day sales summary, and DB-backed slot capacity/closure controls.
+- **QR & Pickup Code Tracking + Account Order History:** One-time cryptographic QR pickup token + 4-character pickup code, 5-stage live tracking timeline (4s polling), and account-owned **Order History** (`GET /api/orders/mine`) plus ownership-verified single-order lookup (`GET /api/orders/{order_id}`).
+- **Kitchen Operations Dashboard (`CANTEEN_STAFF` / `MANAGER`):** Live slot-grouped queue, Special Instructions visibility, sequential status updates, camera + manual QR verification (`POST /api/kitchen/verify-pickup`), and slot workload meters.
+- **Manager Console (`MANAGER`):** Real-time operational KPIs (`Asia/Kolkata`), full menu CRUD with dietary & allergen fields, snapshot-safe soft deletion, order oversight, collected-only 7-day sales summary, DB-backed slot capacity/closure controls, Staff & Access account management, and Manager-only non-production Demo Reset.
 
 ---
 
@@ -144,6 +145,8 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 copy .env.example .env
+# Provision the initial Manager account once (prompts securely if --password is omitted)
+.\.venv\Scripts\python.exe -m app.bootstrap_manager --full-name "Canteen Manager" --email manager@campus.edu
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -179,7 +182,13 @@ npm.cmd run dev
 | `SLOT_DURATION_MINUTES` | `5` | Duration of each pickup window |
 | `SLOT_CAPACITY_UNITS` | `12` | Max preparation workload units per standard slot |
 | `SLOT_LOOKAHEAD_MINUTES` | `45` | Default lookahead window shown in kitchen slots |
-| `ENABLE_DEMO_RESET` | `true` | Enables `POST /api/demo/reset` when non-production |
+| `ENABLE_DEMO_RESET` | `true` | Enables `POST /api/demo/reset` when non-production (Manager-only) |
+| `SESSION_COOKIE_NAME` | `queueless_session` | Name of the `HttpOnly` session cookie |
+| `SESSION_TTL_HOURS` | `24` | Session lifetime in hours (`1..168`) |
+| `SESSION_COOKIE_SECURE` | `false` | Optional HTTPS-only cookie flag (`true` auto-enforced in `production`) |
+| `SESSION_COOKIE_SAMESITE` | `lax` | SameSite cookie attribute (`lax` or `strict`) |
+| `LOGIN_RATE_LIMIT_MAX_ATTEMPTS` | `10` | Failed login attempts permitted per window |
+| `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | `300` | In-process rate-limit sliding window (seconds) |
 
 ### Frontend (`frontend/.env.example`)
 
@@ -193,29 +202,30 @@ npm.cmd run dev
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Service and SQLite connectivity check |
-| `GET` | `/api/menu` | List available menu items (`category`, `dietary`, `search`, `include_unavailable`) |
-| `GET` | `/api/slots/available` | List chronological upcoming pickup slots (`workload_units` feasibility) |
-| `POST` | `/api/natural-order/parse` | Parse plain-language text against live SQLite menu & slots for preview |
-| `POST` | `/api/orders` | Validate items, notes, payment method, optional slot, reserve atomically |
-| `POST` | `/api/orders/{order_id}/demo-payment` | Process simulated Demo UPI / Counter Cash state transition (demo only) |
-| `GET` | `/api/orders/{order_id}` | Fetch live order status, items, pickup code, and pickup window |
-| `GET` | `/api/kitchen/orders` | List kitchen orders (`status=active` default or specific status) |
-| `PATCH` | `/api/kitchen/orders/{order_id}/status` | Advance order (`PLACED → ACCEPTED → PREPARING → READY → COLLECTED`) |
-| `POST` | `/api/kitchen/verify-pickup` | Verify one-time QR pickup token and atomically collect a `READY` order |
-| `GET` | `/api/kitchen/slots` | List upcoming and active pickup slots with occupied/remaining units and closure status |
-| `GET` | `/api/manager/dashboard` | Real-time manager KPIs in `Asia/Kolkata` timezone |
-| `GET` | `/api/manager/menu` | List all non-deleted menu items (available and sold out) |
-| `POST` | `/api/manager/menu` | Create a new menu item (paise price, Veg/Non-Veg, category validation) |
-| `PUT` | `/api/manager/menu/{item_id}` | Edit a menu item without changing historical order snapshots |
-| `PATCH` | `/api/manager/menu/{item_id}/availability` | Mark an item available or sold out |
-| `DELETE` | `/api/manager/menu/{item_id}` | Soft-delete/archive a menu item while keeping order history intact |
-| `GET` | `/api/manager/orders` | List/filter/search all orders (status, `YYYY-MM-DD` date, ID/code/name) |
-| `GET` | `/api/manager/sales` | Finalized 7-day sales & top items (collected orders only) |
-| `GET` | `/api/manager/slots` | Current capacity settings and upcoming/active slot controls |
-| `PATCH` | `/api/manager/settings/capacity` | Persist updated default slot capacity in SQLite |
-| `PATCH` | `/api/manager/slots/status` | Close or reopen a 5-minute pickup slot |
-| `POST` | `/api/demo/reset` | Clear demo orders/items transactionally while preserving menu (demo mode only) |
+| `GET` | `/api/health` | Public service and SQLite connectivity check |
+| `GET` | `/api/menu` | Public available menu items (`category`, `dietary`, `search`, `include_unavailable`) |
+| `POST` | `/api/auth/register` | Student self-registration (`STUDENT` role only) |
+| `POST` | `/api/auth/login` | Unified credential login (`STUDENT`, `CANTEEN_STAFF`, `MANAGER`) |
+| `GET` | `/api/auth/me` | Restore active user, role, and `csrf_token` from session cookie |
+| `POST` | `/api/auth/logout` | Revoke server-side session and clear cookie (`CSRF`) |
+| `GET`/`PATCH` | `/api/auth/profile` | Read or update own name, roll number, or password (`CSRF` on `PATCH`) |
+| `GET` | `/api/slots/available` | Chronological upcoming pickup slots (`STUDENT` role) |
+| `POST` | `/api/natural-order/parse` | Parse plain-language text against live menu & slots (`STUDENT`, `CSRF`) |
+| `GET` | `/api/orders/mine` | Authenticated student's own order history (`STUDENT` role) |
+| `POST` | `/api/orders` | Validate items, reserve slot atomically, create owned order (`STUDENT`, `CSRF`) |
+| `POST` | `/api/orders/{order_id}/demo-payment` | Simulated payment transition for owned order (`STUDENT`, `CSRF`) |
+| `GET` | `/api/orders/{order_id}` | Fetch live tracking details for an owned order (`STUDENT` role) |
+| `GET` | `/api/kitchen/orders` | List kitchen orders (`CANTEEN_STAFF` or `MANAGER`) |
+| `PATCH` | `/api/kitchen/orders/{order_id}/status` | Advance order status sequentially (`CANTEEN_STAFF` or `MANAGER`, `CSRF`) |
+| `POST` | `/api/kitchen/verify-pickup` | Verify QR token & collect `READY` order (`CANTEEN_STAFF` or `MANAGER`, `CSRF`) |
+| `GET` | `/api/kitchen/slots` | Live slot workload metrics (`CANTEEN_STAFF` or `MANAGER`) |
+| `GET` | `/api/manager/dashboard` | Real-time KPIs in `Asia/Kolkata` (`MANAGER`) |
+| `GET`/`POST`/`PUT`/`PATCH`/`DELETE` | `/api/manager/menu*` | Manager menu CRUD & availability toggles (`MANAGER`, `CSRF` on mutations) |
+| `GET` | `/api/manager/orders` | List/filter/search all canteen orders (`MANAGER`) |
+| `GET` | `/api/manager/sales` | Finalized 7-day sales & top items (`MANAGER`) |
+| `GET`/`PATCH` | `/api/manager/slots*`, `/api/manager/settings/capacity` | Slot capacity & closure controls (`MANAGER`, `CSRF` on `PATCH`) |
+| `GET`/`POST`/`PATCH` | `/api/manager/staff*` | Provision/list/deactivate `CANTEEN_STAFF` & `MANAGER` accounts (`MANAGER`, `CSRF`) |
+| `POST` | `/api/demo/reset` | Clear demo orders transactionally while keeping users & menu (`MANAGER`, `CSRF`, non-prod) |
 
 Full request/response contracts and error payloads are documented in [docs/API.md](docs/API.md).
 
@@ -223,10 +233,12 @@ Full request/response contracts and error payloads are documented in [docs/API.m
 
 ## 11. Database Explanation
 
-SQLite (`queueless.db`, WAL mode, foreign keys enabled) stores five core tables with idempotent additive migrations:
+SQLite (`queueless.db`, WAL mode, foreign keys enabled) stores seven core tables with idempotent additive migrations:
 
+- `users`: Multi-role user accounts (`STUDENT`, `CANTEEN_STAFF`, `MANAGER`), case-insensitive unique `email`, Argon2id `password_hash`, optional `student_roll_no`, `is_active`, and timestamps.
+- `sessions`: Server-side opaque sessions storing `session_token_hash` (SHA-256 hex), `csrf_token`, `expires_at`, and `revoked_at` referencing `users.id`.
 - `menu_items`: Catalog items with integer `price` (in paise), `prep_minutes` workload estimate, `available`, `is_veg`, `is_vegan`, `is_jain`, manager-verified `allergen_info`, soft-delete flag `is_deleted`, category, and `image_url`.
-- `orders`: Order metadata including unique `pickup_code`, `customer_name`, `status`, `pickup_slot_start`, `pickup_slot_end`, server-calculated `total_amount` (paise), `total_prep_units`, sanitized `notes`, simulated `payment_method`/`payment_status`/`payment_reference`, SHA-256 `pickup_token_hash` & `pickup_token_used_at`, `created_at`, and `updated_at`.
+- `orders`: Order metadata including nullable ownership `user_id` referencing `users.id`, unique `pickup_code`, `customer_name`, `status`, `pickup_slot_start`, `pickup_slot_end`, server-calculated `total_amount` (paise), `total_prep_units`, sanitized `notes`, simulated `payment_method`/`payment_status`/`payment_reference`, SHA-256 `pickup_token_hash` & `pickup_token_used_at`, `created_at`, and `updated_at`.
 - `order_items`: Snapshotted line items (`item_name`, `quantity`, `unit_price`, `prep_minutes`) referencing `orders.id` (`ON DELETE CASCADE`) and `menu_items.id`.
 - `canteen_settings` & `closed_slots`: Manager-configured slot capacity (`slot_capacity_units`) and closed pickup windows.
 
@@ -259,7 +271,7 @@ cd backend
 cd ..\frontend
 npm.cmd run build
 npm.cmd run lint
-node --test tests/cart.test.ts tests/kitchen.test.ts tests/demo_reset.test.ts tests/manager.test.ts tests/qr.test.ts tests/natural_order.test.ts tests/slot_selection.test.ts tests/phase10.test.ts
+node --test tests/cart.test.ts tests/kitchen.test.ts tests/demo_reset.test.ts tests/manager.test.ts tests/qr.test.ts tests/natural_order.test.ts tests/slot_selection.test.ts tests/phase10.test.ts tests/auth.test.ts
 ```
 
 ---
@@ -270,7 +282,7 @@ node --test tests/cart.test.ts tests/kitchen.test.ts tests/demo_reset.test.ts te
 - **QR rendering & fallback:** `PickupQrCard` renders the token locally using `qrcode` (zero external network calls) with an enlarge modal. If a token is unavailable in the browser session or QR rendering fails, the student's 4-character `pickup_code` and `order_id` remain visible with a **Retry QR** action.
 - **Kitchen scanner & camera permissions:** `KitchenQrScannerModal` uses `jsqr` + `navigator.mediaDevices.getUserMedia` (defaulting to the rear camera `{ facingMode: { ideal: 'environment' } }`), requests camera access only when opened, stops all camera tracks immediately on close/unmount, prevents rapid duplicate scans with a 3-second cooldown, and includes a **Manual Token Fallback** input calling `POST /api/kitchen/verify-pickup`.
 - **HTTPS note:** Browser camera access (`getUserMedia`) works on `http://localhost` / `http://127.0.0.1` and requires **HTTPS** when served over a LAN or public hostname.
-- **Production auth requirement:** Kitchen and Manager endpoints are open in hackathon demo mode and require authentication and role-based authorization before production deployment.
+- **Authentication & RBAC:** Student (`/api/orders*`, `/api/slots/available`, `/api/natural-order/parse`), Kitchen (`/api/kitchen/*`), Manager (`/api/manager/*`), and Demo Reset (`POST /api/demo/reset`) endpoints are protected by `HttpOnly` cookie sessions (`Argon2id` + SHA-256 session tokens), `X-CSRF-Token` validation on mutations, and server-side role/ownership enforcement.
 
 ---
 
@@ -302,9 +314,9 @@ Follow [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for a 3-minute judge walkthrou
 
 ## 18. Security & Known Limitations
 
-- **No authentication / RBAC (Demo Prototype Access):** Kitchen (`/api/kitchen/*`) and Manager (`/api/manager/*`) routes are unauthenticated in hackathon demo mode, and student order history relies on browser `localStorage` Order ID references plus manual Order ID lookup (`GET /api/orders/{order_id}`) with **no open order-listing endpoint** for students. Production deployment requires institutional auth (SSO/JWT), role-based authorization, and customer ownership checks.
+- **Authentication, Sessions & Remaining Account Scope:** Accounts use Argon2id (`argon2-cffi`), opaque SHA-256-hashed server sessions in SQLite, `HttpOnly` + `SameSite` cookies (`Secure` enforced in `ENVIRONMENT=production`), `X-CSRF-Token` + trusted-origin validation on mutations, and strict backend RBAC (`STUDENT`, `CANTEEN_STAFF`, `MANAGER`) plus student order ownership (`user_id`). Self-service password reset / email verification is not implemented (deactivated or locked accounts require manual admin update), and login rate limiting (`LOGIN_RATE_LIMIT_MAX_ATTEMPTS`) is in-process per Python worker.
 - **Simulated Payment Only:** `Demo UPI` and `Cash at Counter` are strictly simulated demo controls (`"Demo Payment — No real money is charged"`). No real UPI PINs, card numbers, banking credentials, or payment gateways are collected or integrated.
 - **Dietary & Allergy Disclaimer:** Vegan, Jain-friendly, and allergen fields show only manager-entered values (`"Not listed — confirm at counter"` when blank). Special instructions (`notes`) are preparation requests, not a guarantee of allergen-free preparation.
-- **QR & HTTPS Constraints:** Raw `pickup_token` is returned only at creation time (`localStorage`-persisted for student refresh; SQLite holds SHA-256 hash only). Device camera scanning via `getUserMedia` requires HTTPS outside `localhost`/`127.0.0.1`; manual token entry and manual counter collection remain fallbacks.
+- **QR & HTTPS Constraints:** Raw `pickup_token` is returned only at creation time (`localStorage`-persisted for student refresh; SQLite holds SHA-256 hash only) and cleared cleanly on logout/session expiry. Device camera scanning via `getUserMedia` requires HTTPS outside `localhost`/`127.0.0.1`; manual token entry and manual counter collection remain fallbacks.
 - **Plain-language parser boundaries:** Runs a local deterministic phrase/synonym/fuzzy parser rather than an external LLM. Complex multi-clause grammar or slang outside the live menu & synonym table is flagged as unmatched for manual selection, and natural-language pickup time preselection remains constrained to the 2-hour (`MAX_EXTENSION_SLOTS = 24`) bookable window and requires checkout confirmation.
-- **Single-canteen & polling prototype:** Tuned for one canteen with SQLite WAL single-instance write locking, 4-second polling instead of WebSockets/SSE, and `POST /api/demo/reset` restricted to non-production environments with `ENABLE_DEMO_RESET=true`.
+- **Single-canteen & polling prototype:** Tuned for one canteen with SQLite WAL single-instance write locking, 4-second polling instead of WebSockets/SSE, and `POST /api/demo/reset` restricted strictly to authenticated `MANAGER` users in non-production environments with `ENABLE_DEMO_RESET=true` (preserving `users` and `sessions`).

@@ -210,6 +210,7 @@ def create_order(
     payload: CreateOrderRequest,
     settings: Settings,
     *,
+    user_id: str | None = None,
     reference_time: datetime | None = None,
 ) -> CreateOrderResponse:
     """Validate items against DB, compute server totals, allocate slot, and persist order."""
@@ -294,15 +295,16 @@ def create_order(
         conn.execute(
             """
             INSERT INTO orders (
-                id, pickup_code, customer_name, status,
+                id, user_id, pickup_code, customer_name, status,
                 pickup_slot_start, pickup_slot_end,
                 total_amount, total_prep_units, notes,
                 payment_method, payment_status, payment_reference,
                 pickup_token_hash, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order_id,
+                user_id,
                 pickup_code,
                 payload.customer_name,
                 order_status,
@@ -358,20 +360,36 @@ def create_order(
 def _fetch_order_with_conn(
     conn: sqlite3.Connection,
     order_id: str,
+    *,
+    owner_user_id: str | None = None,
 ) -> OrderDetailResponse | None:
     """Fetch a single order and its snapshotted items using an existing connection."""
-    order_row = conn.execute(
-        """
-        SELECT id, pickup_code, customer_name, status,
-               pickup_slot_start, pickup_slot_end,
-               total_amount, total_prep_units, notes,
-               payment_method, payment_status, payment_reference,
-               created_at, updated_at
-        FROM orders
-        WHERE id = ?
-        """,
-        (order_id,),
-    ).fetchone()
+    if owner_user_id is not None:
+        order_row = conn.execute(
+            """
+            SELECT id, pickup_code, customer_name, status,
+                   pickup_slot_start, pickup_slot_end,
+                   total_amount, total_prep_units, notes,
+                   payment_method, payment_status, payment_reference,
+                   created_at, updated_at
+            FROM orders
+            WHERE id = ? AND user_id = ?
+            """,
+            (order_id, owner_user_id),
+        ).fetchone()
+    else:
+        order_row = conn.execute(
+            """
+            SELECT id, pickup_code, customer_name, status,
+                   pickup_slot_start, pickup_slot_end,
+                   total_amount, total_prep_units, notes,
+                   payment_method, payment_status, payment_reference,
+                   created_at, updated_at
+            FROM orders
+            WHERE id = ?
+            """,
+            (order_id,),
+        ).fetchone()
 
     if order_row is None:
         return None
@@ -392,14 +410,47 @@ def _fetch_order_with_conn(
     )
 
 
-def get_order_by_id(order_id: str) -> OrderDetailResponse | None:
+def get_order_by_id(
+    order_id: str,
+    *,
+    owner_user_id: str | None = None,
+) -> OrderDetailResponse | None:
     """Fetch a single order and its snapshotted items by order ID."""
     cleaned_id = order_id.strip()
     if not cleaned_id:
         return None
 
     with db_session() as conn:
-        return _fetch_order_with_conn(conn, cleaned_id)
+        return _fetch_order_with_conn(conn, cleaned_id, owner_user_id=owner_user_id)
+
+
+def list_student_orders(user_id: str) -> list[OrderDetailResponse]:
+    """Return orders belonging strictly to the authenticated student, newest first."""
+    with db_session() as conn:
+        order_rows = conn.execute(
+            """
+            SELECT id, pickup_code, customer_name, status,
+                   pickup_slot_start, pickup_slot_end,
+                   total_amount, total_prep_units, notes,
+                   payment_method, payment_status, payment_reference,
+                   created_at, updated_at
+            FROM orders
+            WHERE user_id = ?
+            ORDER BY created_at DESC, pickup_slot_start DESC
+            """,
+            (user_id,),
+        ).fetchall()
+
+        if not order_rows:
+            return []
+
+        order_ids = [str(row["id"]) for row in order_rows]
+        items_by_order = fetch_items_by_order(conn, order_ids)
+
+    return [
+        _build_order_detail(row, items_by_order.get(str(row["id"]), []))
+        for row in order_rows
+    ]
 
 
 def fetch_items_by_order(
@@ -639,6 +690,8 @@ def process_demo_payment(
     order_id: str,
     payload: DemoPaymentRequest,
     settings: Settings,
+    *,
+    owner_user_id: str | None = None,
 ) -> DemoPaymentResponse:
     """Simulate demo payment outcome atomically without claiming real money movement."""
     cleaned_id = order_id.strip()
@@ -654,14 +707,16 @@ def process_demo_payment(
     with write_transaction() as conn:
         row = conn.execute(
             """
-            SELECT id, status, payment_method, payment_status
+            SELECT id, user_id, status, payment_method, payment_status
             FROM orders
             WHERE id = ?
             """,
             (cleaned_id,),
         ).fetchone()
 
-        if row is None:
+        if row is None or (
+            owner_user_id is not None and row["user_id"] != owner_user_id
+        ):
             raise OrderValidationError(
                 f"Order '{cleaned_id}' was not found.",
                 status_code=404,

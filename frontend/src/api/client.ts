@@ -1,5 +1,7 @@
 import type {
   ApiErrorBody,
+  AuthSessionResponse,
+  AuthenticatedUser,
   AvailableSlotsResponse,
   CreateOrderRequest,
   CreateOrderResponse,
@@ -8,6 +10,8 @@ import type {
   DemoResetResponse,
   DietaryFilter,
   HealthResponse,
+  LoginRequest,
+  LogoutResponse,
   ManagerDashboard,
   ManagerSalesSummary,
   ManagerSlotSettings,
@@ -17,13 +21,27 @@ import type {
   NaturalOrderParseResponse,
   OrderDetail,
   OrderStatus,
+  ProfileUpdateRequest,
   SlotClosureRequest,
   SlotWorkload,
+  StaffCreateRequest,
+  StudentRegisterRequest,
   VerifyPickupResponse,
 } from '../types'
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '')
+
+let activeCsrfToken: string | null = null
+let onSessionExpiredCallback: (() => void) | null = null
+
+export function setApiCsrfToken(token: string | null): void {
+  activeCsrfToken = token
+}
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpiredCallback = handler
+}
 
 export class ApiClientError extends Error {
   readonly statusCode: number
@@ -58,15 +76,35 @@ export async function apiRequest<T>(
   init?: RequestInit,
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const isMutation =
+    method === 'POST' ||
+    method === 'PATCH' ||
+    method === 'PUT' ||
+    method === 'DELETE'
+
   const response = await fetch(url, {
     ...init,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(isMutation && activeCsrfToken
+        ? { 'X-CSRF-Token': activeCsrfToken }
+        : {}),
       ...(init?.headers ?? {}),
     },
   })
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      path !== '/api/auth/login' &&
+      path !== '/api/auth/register' &&
+      path !== '/api/auth/me'
+    ) {
+      activeCsrfToken = null
+      onSessionExpiredCallback?.()
+    }
     throw await parseErrorMessage(response)
   }
 
@@ -312,6 +350,95 @@ export function fetchAvailableSlots(
     `/api/slots/available${query ? `?${query}` : ''}`,
     {
       method: 'GET',
+    },
+  )
+}
+
+export async function registerStudent(
+  payload: StudentRegisterRequest,
+): Promise<AuthSessionResponse> {
+  const session = await apiRequest<AuthSessionResponse>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  setApiCsrfToken(session.csrf_token)
+  return session
+}
+
+export async function loginUser(
+  payload: LoginRequest,
+): Promise<AuthSessionResponse> {
+  const session = await apiRequest<AuthSessionResponse>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  setApiCsrfToken(session.csrf_token)
+  return session
+}
+
+export async function fetchCurrentSession(): Promise<AuthSessionResponse> {
+  const session = await apiRequest<AuthSessionResponse>('/api/auth/me', {
+    method: 'GET',
+  })
+  setApiCsrfToken(session.csrf_token)
+  return session
+}
+
+export async function logoutUser(): Promise<LogoutResponse> {
+  try {
+    return await apiRequest<LogoutResponse>('/api/auth/logout', {
+      method: 'POST',
+    })
+  } finally {
+    setApiCsrfToken(null)
+  }
+}
+
+export function fetchProfile(): Promise<AuthenticatedUser> {
+  return apiRequest<AuthenticatedUser>('/api/auth/profile', {
+    method: 'GET',
+  })
+}
+
+export function updateProfile(
+  payload: ProfileUpdateRequest,
+): Promise<AuthenticatedUser> {
+  return apiRequest<AuthenticatedUser>('/api/auth/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function fetchMyOrders(): Promise<OrderDetail[]> {
+  return apiRequest<OrderDetail[]>('/api/orders/mine', {
+    method: 'GET',
+  })
+}
+
+export function fetchManagerStaff(): Promise<AuthenticatedUser[]> {
+  return apiRequest<AuthenticatedUser[]>('/api/manager/staff', {
+    method: 'GET',
+  })
+}
+
+export function createManagerStaff(
+  payload: StaffCreateRequest,
+): Promise<AuthenticatedUser> {
+  return apiRequest<AuthenticatedUser>('/api/manager/staff', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateManagerStaffStatus(
+  userId: string,
+  isActive: boolean,
+): Promise<AuthenticatedUser> {
+  return apiRequest<AuthenticatedUser>(
+    `/api/manager/staff/${encodeURIComponent(userId)}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: isActive }),
     },
   )
 }

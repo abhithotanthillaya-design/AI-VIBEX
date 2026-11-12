@@ -3,7 +3,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]+")
 
@@ -201,6 +201,210 @@ class VerifyPickupResponse(BaseModel):
     verified: bool
     message: str
     order: OrderDetailResponse
+
+
+UserRole = Literal["STUDENT", "CANTEEN_STAFF", "MANAGER"]
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
+def normalize_and_validate_email(value: str) -> str:
+    """Validate basic email syntax and normalize case without assuming domain restrictions."""
+    cleaned = sanitize_text_input(value) or ""
+    lowered = cleaned.lower()
+    if len(lowered) > 254 or not _EMAIL_RE.fullmatch(lowered):
+        raise ValueError("Please enter a valid email address.")
+    return lowered
+
+
+def validate_password_policy(value: str) -> str:
+    """Enforce reasonable non-trivial password policy (8-128 chars, letters + numbers)."""
+    if len(value) < 8:
+        raise ValueError("Password must be at least 8 characters long.")
+    if len(value) > 128:
+        raise ValueError("Password cannot exceed 128 characters.")
+    if not any(ch.isalpha() for ch in value) or not any(ch.isdigit() for ch in value):
+        raise ValueError("Password must include at least one letter and one number.")
+    return value
+
+
+class StudentRegisterRequest(BaseModel):
+    """Public student-only registration payload (POST /api/auth/register)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=80)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    confirm_password: str = Field(min_length=8, max_length=128)
+    student_roll_no: str | None = Field(default=None, max_length=40)
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value: str) -> str:
+        """Sanitize full name and verify minimum length."""
+        cleaned = sanitize_text_input(value) or ""
+        if len(cleaned) < 2:
+            raise ValueError("Full name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        """Normalize and validate email format."""
+        return normalize_and_validate_email(value)
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        """Apply password strength rules."""
+        return validate_password_policy(value)
+
+    @field_validator("student_roll_no")
+    @classmethod
+    def clean_roll_no(cls, value: str | None) -> str | None:
+        """Sanitize optional college registration / student ID."""
+        return sanitize_text_input(value)
+
+    @model_validator(mode="after")
+    def verify_passwords_match(self) -> "StudentRegisterRequest":
+        """Ensure password and confirmation match cleanly."""
+        if self.password != self.confirm_password:
+            raise ValueError("Password and confirm password do not match.")
+        return self
+
+
+class LoginRequest(BaseModel):
+    """Unified login payload accepted by POST /api/auth/login."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        """Normalize email without disclosing existence details."""
+        return normalize_and_validate_email(value)
+
+
+class AuthenticatedUserResponse(BaseModel):
+    """Public user view (never includes password_hash)."""
+
+    id: str
+    full_name: str
+    email: str
+    student_roll_no: str | None = None
+    role: UserRole
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class AuthSessionResponse(BaseModel):
+    """Session bootstrap payload returned after login, registration, and /api/auth/me."""
+
+    status: str = "ok"
+    user: AuthenticatedUserResponse
+    csrf_token: str
+    expires_at: str
+
+
+class LogoutResponse(BaseModel):
+    """Confirmation payload returned by POST /api/auth/logout."""
+
+    status: str = "ok"
+    message: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Permitted self-profile fields editable via PATCH /api/auth/profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=80)
+    student_roll_no: str | None = Field(default=None, max_length=40)
+    current_password: str | None = Field(default=None, max_length=128)
+    new_password: str | None = Field(default=None, max_length=128)
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value: str | None) -> str | None:
+        """Sanitize full_name if supplied."""
+        if value is None:
+            return None
+        cleaned = sanitize_text_input(value) or ""
+        if len(cleaned) < 2:
+            raise ValueError("Full name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("student_roll_no")
+    @classmethod
+    def clean_roll_no(cls, value: str | None) -> str | None:
+        """Sanitize optional student ID."""
+        if value is None:
+            return None
+        return sanitize_text_input(value)
+
+    @model_validator(mode="after")
+    def validate_password_change(self) -> "ProfileUpdateRequest":
+        """Require current_password when changing to a policy-compliant new_password."""
+        if self.new_password is not None:
+            if not self.current_password:
+                raise ValueError("Current password is required to set a new password.")
+            validate_password_policy(self.new_password)
+        return self
+
+
+class StaffCreateRequest(BaseModel):
+    """Manager-only staff/manager provisioning payload (POST /api/manager/staff)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=80)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["CANTEEN_STAFF", "MANAGER"] = "CANTEEN_STAFF"
+    confirm_manager_grant: bool = False
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value: str) -> str:
+        """Sanitize staff member name."""
+        cleaned = sanitize_text_input(value) or ""
+        if len(cleaned) < 2:
+            raise ValueError("Full name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        """Normalize and validate email syntax."""
+        return normalize_and_validate_email(value)
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        """Apply password strength rules."""
+        return validate_password_policy(value)
+
+    @model_validator(mode="after")
+    def check_manager_grant(self) -> "StaffCreateRequest":
+        """Require explicit confirmation flag to provision an additional MANAGER account."""
+        if self.role == "MANAGER" and not self.confirm_manager_grant:
+            raise ValueError(
+                "Creating an additional Manager account requires explicit authorization confirmation."
+            )
+        return self
+
+
+class UserStatusUpdateRequest(BaseModel):
+    """Manager-only account activation toggle payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool
 
 
 class OrderStatusUpdateRequest(BaseModel):
@@ -531,4 +735,208 @@ class VerifyPickupResponse(BaseModel):
     verified: bool
     message: str
     order: OrderDetailResponse
+
+
+UserRole = Literal["STUDENT", "CANTEEN_STAFF", "MANAGER"]
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
+def normalize_and_validate_email(value: str) -> str:
+    """Validate basic email syntax and normalize case without assuming domain restrictions."""
+    cleaned = sanitize_text_input(value) or ""
+    lowered = cleaned.lower()
+    if len(lowered) > 254 or not _EMAIL_RE.fullmatch(lowered):
+        raise ValueError("Please enter a valid email address.")
+    return lowered
+
+
+def validate_password_policy(value: str) -> str:
+    """Enforce reasonable non-trivial password policy (8-128 chars, letters + numbers)."""
+    if len(value) < 8:
+        raise ValueError("Password must be at least 8 characters long.")
+    if len(value) > 128:
+        raise ValueError("Password cannot exceed 128 characters.")
+    if not any(ch.isalpha() for ch in value) or not any(ch.isdigit() for ch in value):
+        raise ValueError("Password must include at least one letter and one number.")
+    return value
+
+
+class StudentRegisterRequest(BaseModel):
+    """Public student-only registration payload (POST /api/auth/register)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=80)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    confirm_password: str = Field(min_length=8, max_length=128)
+    student_roll_no: str | None = Field(default=None, max_length=40)
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value: str) -> str:
+        """Sanitize full name and verify minimum length."""
+        cleaned = sanitize_text_input(value) or ""
+        if len(cleaned) < 2:
+            raise ValueError("Full name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        """Normalize and validate email format."""
+        return normalize_and_validate_email(value)
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        """Apply password strength rules."""
+        return validate_password_policy(value)
+
+    @field_validator("student_roll_no")
+    @classmethod
+    def clean_roll_no(cls, value: str | None) -> str | None:
+        """Sanitize optional college registration / student ID."""
+        return sanitize_text_input(value)
+
+    @model_validator(mode="after")
+    def verify_passwords_match(self) -> "StudentRegisterRequest":
+        """Ensure password and confirmation match cleanly."""
+        if self.password != self.confirm_password:
+            raise ValueError("Password and confirm password do not match.")
+        return self
+
+
+class LoginRequest(BaseModel):
+    """Unified login payload accepted by POST /api/auth/login."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        """Normalize email without disclosing existence details."""
+        return normalize_and_validate_email(value)
+
+
+class AuthenticatedUserResponse(BaseModel):
+    """Public user view (never includes password_hash)."""
+
+    id: str
+    full_name: str
+    email: str
+    student_roll_no: str | None = None
+    role: UserRole
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class AuthSessionResponse(BaseModel):
+    """Session bootstrap payload returned after login, registration, and /api/auth/me."""
+
+    status: str = "ok"
+    user: AuthenticatedUserResponse
+    csrf_token: str
+    expires_at: str
+
+
+class LogoutResponse(BaseModel):
+    """Confirmation payload returned by POST /api/auth/logout."""
+
+    status: str = "ok"
+    message: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Permitted self-profile fields editable via PATCH /api/auth/profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=80)
+    student_roll_no: str | None = Field(default=None, max_length=40)
+    current_password: str | None = Field(default=None, max_length=128)
+    new_password: str | None = Field(default=None, max_length=128)
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value: str | None) -> str | None:
+        """Sanitize full_name if supplied."""
+        if value is None:
+            return None
+        cleaned = sanitize_text_input(value) or ""
+        if len(cleaned) < 2:
+            raise ValueError("Full name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("student_roll_no")
+    @classmethod
+    def clean_roll_no(cls, value: str | None) -> str | None:
+        """Sanitize optional student ID."""
+        if value is None:
+            return None
+        return sanitize_text_input(value)
+
+    @model_validator(mode="after")
+    def validate_password_change(self) -> "ProfileUpdateRequest":
+        """Require current_password when changing to a policy-compliant new_password."""
+        if self.new_password is not None:
+            if not self.current_password:
+                raise ValueError("Current password is required to set a new password.")
+            validate_password_policy(self.new_password)
+        return self
+
+
+class StaffCreateRequest(BaseModel):
+    """Manager-only staff/manager provisioning payload (POST /api/manager/staff)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=80)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["CANTEEN_STAFF", "MANAGER"] = "CANTEEN_STAFF"
+    confirm_manager_grant: bool = False
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value: str) -> str:
+        """Sanitize staff member name."""
+        cleaned = sanitize_text_input(value) or ""
+        if len(cleaned) < 2:
+            raise ValueError("Full name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        """Normalize and validate email syntax."""
+        return normalize_and_validate_email(value)
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        """Apply password strength rules."""
+        return validate_password_policy(value)
+
+    @model_validator(mode="after")
+    def check_manager_grant(self) -> "StaffCreateRequest":
+        """Require explicit confirmation flag to provision an additional MANAGER account."""
+        if self.role == "MANAGER" and not self.confirm_manager_grant:
+            raise ValueError(
+                "Creating an additional Manager account requires explicit authorization confirmation."
+            )
+        return self
+
+
+class UserStatusUpdateRequest(BaseModel):
+    """Manager-only account activation toggle payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool
 

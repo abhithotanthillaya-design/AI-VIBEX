@@ -11,6 +11,7 @@ from app.database import init_db
 from app.main import create_app
 from app.natural_order import parse_natural_order
 from app.seed import seed_menu_items
+from tests.auth_helpers import create_manager_client, create_student_client
 
 
 def _setup_test_app(monkeypatch, tmpdir: str):
@@ -26,7 +27,8 @@ def test_natural_order_valid_items_synonyms_and_db_prices(monkeypatch) -> None:
     """Verify multiple items, number words, synonyms, and authoritative DB prices."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            client = create_student_client(app)
             res = client.post(
                 "/api/natural-order/parse",
                 json={"text": "One masala dosa and two teas"},
@@ -55,7 +57,9 @@ def test_natural_order_rejects_unknown_ambiguous_unavailable_deleted_and_bad_qua
     """Verify no fabricated items, no silent substitution, unavailable/deleted detection, and quantity limits."""
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _setup_test_app(monkeypatch, tmpdir)
-        with TestClient(app) as client:
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            client = create_student_client(app)
             # Blank input rejected
             assert (
                 client.post("/api/natural-order/parse", json={"text": "   "}).status_code
@@ -98,7 +102,7 @@ def test_natural_order_rejects_unknown_ambiguous_unavailable_deleted_and_bad_qua
             assert any("sold out" in w.lower() for w in unavail_res["warnings"])
 
             # Soft-deleted item is flagged as removed rather than ordered
-            client.delete("/api/manager/menu/item_7")
+            manager.delete("/api/manager/menu/item_7")
             deleted_res = client.post(
                 "/api/natural-order/parse",
                 json={"text": "One poha"},
@@ -168,8 +172,9 @@ def test_natural_order_pickup_time_extraction_past_invalid_and_closed_slot(
 
         # Closed slot detected when manager closes 1:15 PM slot
         app = create_app()
-        with TestClient(app) as client:
-            client.patch(
+        with TestClient(app) as _lifespan:
+            manager = create_manager_client(app)
+            manager.patch(
                 "/api/manager/slots/status",
                 json={
                     "slot_start": "2026-11-12T13:15:00+05:30",

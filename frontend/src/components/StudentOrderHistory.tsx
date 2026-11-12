@@ -8,9 +8,10 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react'
-import { ApiClientError, fetchOrder } from '../api/client'
+import { ApiClientError, fetchMyOrders, fetchOrder } from '../api/client'
 import type { OrderDetail } from '../types'
 import {
   formatRupees,
@@ -19,7 +20,6 @@ import {
 } from '../utils/format'
 import { getPaymentStatusMeta } from '../utils/phase10'
 import {
-  readStoredOrderHistory,
   readStoredPickupToken,
   recordStoredOrderHistory,
   removeStoredOrderHistory,
@@ -44,86 +44,59 @@ export function StudentOrderHistory({
   onBackToMenu,
   onOpenTracking,
 }: StudentOrderHistoryProps) {
-  const [storedIds, setStoredIds] = useState<string[]>(() =>
-    readStoredOrderHistory(),
-  )
   const [entries, setEntries] = useState<HistoryEntry[]>([])
-  const [isLoading, setIsLoading] = useState<boolean>(storedIds.length > 0)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [lookupInput, setLookupInput] = useState('')
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [isLookingUp, setIsLookingUp] = useState(false)
 
-  const syncHistoryOrders = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) {
-      setEntries([])
-      setIsLoading(false)
-      return
-    }
+  const syncAccountOrders = useCallback(async () => {
     setIsLoading(true)
-    const results = await Promise.all(
-      ids.map(async (orderId): Promise<HistoryEntry> => {
-        try {
-          const order = await fetchOrder(orderId)
-          return {
-            orderId,
-            order,
-            error: null,
-            hasQrToken: Boolean(readStoredPickupToken(orderId)),
-          }
-        } catch (err) {
-          const message =
-            err instanceof ApiClientError && err.statusCode === 404
-              ? 'Order no longer exists on the server (e.g. cleared during demo reset).'
-              : err instanceof ApiClientError
-                ? err.message
-                : 'Unable to sync order status.'
-          return {
-            orderId,
-            order: null,
-            error: message,
-            hasQrToken: Boolean(readStoredPickupToken(orderId)),
-          }
-        }
-      }),
-    )
-    setEntries(results)
-    setIsLoading(false)
+    setHistoryError(null)
+    try {
+      const orders = await fetchMyOrders()
+      setEntries(
+        orders.map((order) => ({
+          orderId: order.id,
+          order,
+          error: null,
+          hasQrToken: Boolean(readStoredPickupToken(order.id)),
+        })),
+      )
+    } catch (err) {
+      setHistoryError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Unable to load your order history right now.',
+      )
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
   useEffect(() => {
     let active = true
-    if (storedIds.length === 0) {
-      return
-    }
-    Promise.all(
-      storedIds.map(async (orderId): Promise<HistoryEntry> => {
-        try {
-          const order = await fetchOrder(orderId)
-          return {
-            orderId,
+    fetchMyOrders()
+      .then((orders) => {
+        if (!active) return
+        setEntries(
+          orders.map((order) => ({
+            orderId: order.id,
             order,
             error: null,
-            hasQrToken: Boolean(readStoredPickupToken(orderId)),
-          }
-        } catch (err) {
-          const message =
-            err instanceof ApiClientError && err.statusCode === 404
-              ? 'Order no longer exists on the server (e.g. cleared during demo reset).'
-              : err instanceof ApiClientError
-                ? err.message
-                : 'Unable to sync order status.'
-          return {
-            orderId,
-            order: null,
-            error: message,
-            hasQrToken: Boolean(readStoredPickupToken(orderId)),
-          }
-        }
-      }),
-    )
-      .then((results) => {
+            hasQrToken: Boolean(readStoredPickupToken(order.id)),
+          })),
+        )
+        setHistoryError(null)
+      })
+      .catch((err: unknown) => {
         if (!active) return
-        setEntries(results)
+        setHistoryError(
+          err instanceof ApiClientError
+            ? err.message
+            : 'Unable to load your order history right now.',
+        )
       })
       .finally(() => {
         if (!active) return
@@ -133,7 +106,7 @@ export function StudentOrderHistory({
     return () => {
       active = false
     }
-  }, [storedIds])
+  }, [])
 
   const handleManualLookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -142,11 +115,10 @@ export function StudentOrderHistory({
     setLookupError(null)
     setIsLookingUp(true)
     try {
-      await fetchOrder(cleaned)
-      const nextIds = recordStoredOrderHistory(cleaned)
-      setStoredIds(nextIds)
+      const found = await fetchOrder(cleaned)
+      recordStoredOrderHistory(cleaned)
       setLookupInput('')
-      await syncHistoryOrders(nextIds)
+      onOpenTracking(found.id)
     } catch (err) {
       setLookupError(
         err instanceof ApiClientError
@@ -159,8 +131,7 @@ export function StudentOrderHistory({
   }
 
   const handleRemoveEntry = (orderId: string) => {
-    const nextIds = removeStoredOrderHistory(orderId)
-    setStoredIds(nextIds)
+    removeStoredOrderHistory(orderId)
     setEntries((prev) => prev.filter((e) => e.orderId !== orderId))
   }
 
@@ -180,8 +151,7 @@ export function StudentOrderHistory({
             Your Order History
           </h1>
           <p className="mt-1 text-sm text-stone-600">
-            Reopen tracking or pickup codes for orders placed or looked up in this
-            browser.
+            Account-linked canteen pre-orders, live pickup statuses, and saved QR tokens.
           </p>
         </div>
 
@@ -190,9 +160,8 @@ export function StudentOrderHistory({
           variant="secondary"
           size="sm"
           loading={isLoading}
-          disabled={storedIds.length === 0}
           onClick={() => {
-            void syncHistoryOrders(storedIds)
+            void syncAccountOrders()
           }}
           icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
         >
@@ -200,12 +169,16 @@ export function StudentOrderHistory({
         </Button>
       </div>
 
-      <Card className="p-4 space-y-3">
-        <p className="text-xs leading-relaxed text-stone-600">
-          <strong className="text-stone-900">Demo Privacy Note:</strong> This
-          prototype does not use student accounts; order references are stored
-          locally in your browser and verified individually from the backend. Enter
-          any Order ID to fetch and bookmark its status.
+      <Card className="space-y-3 p-4">
+        <p className="flex items-start gap-2 text-xs leading-relaxed text-stone-600">
+          <ShieldCheck
+            className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700"
+            aria-hidden="true"
+          />
+          <span>
+            <strong className="text-stone-900">Account Ownership Enforced:</strong>{' '}
+            Only orders belonging to your signed-in student account appear here. Lookups by Order ID are verified by the backend.
+          </span>
         </p>
 
         <form
@@ -223,9 +196,9 @@ export function StudentOrderHistory({
               type="text"
               value={lookupInput}
               onChange={(event) => setLookupInput(event.target.value)}
-              placeholder="Look up Order ID (e.g. ord_a1b2c3d4e5)"
+              placeholder="Open one of your orders by ID (e.g. ord_a1b2c3d4e5)"
               aria-label="Look up Order ID for history"
-              className="w-full rounded-xl border border-stone-200 bg-white py-2 pl-9 pr-3 text-sm font-mono text-stone-900 placeholder:font-sans placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none"
+              className="w-full rounded-xl border border-stone-200 bg-white py-2 pl-9 pr-3 font-mono text-sm text-stone-900 placeholder:font-sans placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none"
             />
           </div>
           <Button
@@ -235,17 +208,17 @@ export function StudentOrderHistory({
             loading={isLookingUp}
             disabled={!lookupInput.trim() || isLookingUp}
           >
-            Find Order
+            Open Order
           </Button>
         </form>
 
-        {lookupError && (
+        {(lookupError || historyError) && (
           <div
             role="alert"
             className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>{lookupError}</span>
+            <span>{lookupError ?? historyError}</span>
           </div>
         )}
       </Card>
@@ -262,11 +235,10 @@ export function StudentOrderHistory({
             <History className="h-6 w-6" aria-hidden="true" />
           </div>
           <h2 className="mt-3 text-base font-semibold text-stone-900">
-            No saved orders in this browser yet
+            No orders placed under this account yet
           </h2>
           <p className="mt-1 text-sm text-stone-600">
-            Place a canteen pre-order or enter an Order ID above to view live order
-            history.
+            Place a canteen pre-order from the menu to see live pickup tracking and QR passes here.
           </p>
           <div className="mt-4">
             <Button variant="primary" size="md" onClick={onBackToMenu}>
