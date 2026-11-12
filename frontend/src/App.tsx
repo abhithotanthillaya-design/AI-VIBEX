@@ -69,14 +69,7 @@ export function App() {
       apiConnected={apiConnected}
     >
       {activeView === 'student' ? (
-        <StudentPage
-          health={health}
-          healthError={healthError}
-          isCheckingHealth={isCheckingHealth}
-          onCheckHealth={() => {
-            void checkHealth()
-          }}
-        />
+        <StudentPage />
       ) : (
         <KitchenPage
           health={health}

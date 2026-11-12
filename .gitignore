@@ -29,3 +29,13 @@ frontend/.env
 .DS_Store
 Thumbs.db
 
+# Python coverage
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Build artifacts
+build/
+

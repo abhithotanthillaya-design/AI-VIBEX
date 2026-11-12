@@ -1,4 +1,4 @@
-import type { ApiErrorBody, HealthResponse } from '../types'
+import type { ApiErrorBody, HealthResponse, MenuItem } from '../types'
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '')
@@ -53,5 +53,24 @@ export async function apiRequest<T>(
 
 export function fetchHealth(): Promise<HealthResponse> {
   return apiRequest<HealthResponse>('/api/health', { method: 'GET' })
+}
+
+export interface MenuQueryParams {
+  category?: string
+  search?: string
+}
+
+export function fetchMenu(params?: MenuQueryParams): Promise<MenuItem[]> {
+  const searchParams = new URLSearchParams()
+  if (params?.category && params.category !== 'All') {
+    searchParams.set('category', params.category)
+  }
+  if (params?.search && params.search.trim().length > 0) {
+    searchParams.set('search', params.search.trim())
+  }
+  const query = searchParams.toString()
+  return apiRequest<MenuItem[]>(`/api/menu${query ? `?${query}` : ''}`, {
+    method: 'GET',
+  })
 }
 

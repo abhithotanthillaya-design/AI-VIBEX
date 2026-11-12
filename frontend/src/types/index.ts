@@ -84,3 +84,9 @@ export interface ApiErrorBody {
   detail?: string
 }
 
+export interface CartItem {
+  item: MenuItem
+  quantity: number
+}
+
+

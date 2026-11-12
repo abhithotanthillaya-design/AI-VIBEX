@@ -12,12 +12,15 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.database import init_db
 from app.routes.health import router as health_router
+from app.routes.menu import router as menu_router
+from app.seed import seed_menu_items
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Initialize database schema when the API service starts."""
+    """Initialize database schema and seed default menu items on startup."""
     init_db()
+    seed_menu_items()
     yield
 
 
@@ -64,6 +67,7 @@ def create_app() -> FastAPI:
         )
 
     application.include_router(health_router, prefix="/api")
+    application.include_router(menu_router, prefix="/api")
     return application
 
 
