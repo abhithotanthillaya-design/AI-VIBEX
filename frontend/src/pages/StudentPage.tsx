@@ -23,32 +23,13 @@ import {
   updateCartItemQuantity,
 } from '../utils/cart'
 import { formatRupees } from '../utils/format'
+import { readStoredOrderId, writeStoredOrderId } from '../utils/storage'
 import { OrderTrackingPage } from './OrderTrackingPage'
 
 const CATEGORY_ORDER = ['Meals', 'Fast Food', 'Snacks', 'Beverages']
-const LAST_ORDER_STORAGE_KEY = 'queueless_last_order_id'
+const MENU_POLL_INTERVAL_MS = 10000
 
 type StudentSubView = 'menu' | 'tracking'
-
-function readStoredOrderId(): string | null {
-  try {
-    return window.localStorage.getItem(LAST_ORDER_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeStoredOrderId(orderId: string | null): void {
-  try {
-    if (orderId) {
-      window.localStorage.setItem(LAST_ORDER_STORAGE_KEY, orderId)
-    } else {
-      window.localStorage.removeItem(LAST_ORDER_STORAGE_KEY)
-    }
-  } catch {
-    // Ignore storage quota / privacy mode failures.
-  }
-}
 
 function MenuGridSkeleton() {
   return (
@@ -97,13 +78,38 @@ export function StudentPage() {
     readStoredOrderId(),
   )
   const submittingGuardRef = useRef<boolean>(false)
+  const menuPollInFlightRef = useRef<boolean>(false)
+
+  const syncMenuItems = useCallback((items: MenuItem[]) => {
+    setMenuItems(items)
+    const availableById = new Map(items.map((item) => [item.id, item]))
+    setCart((prevCart) => {
+      if (prevCart.length === 0) return prevCart
+      const nextCart: CartItem[] = []
+      let removedAny = false
+      for (const entry of prevCart) {
+        const fresh = availableById.get(entry.item.id)
+        if (fresh && fresh.available) {
+          nextCart.push({ item: fresh, quantity: entry.quantity })
+        } else {
+          removedAny = true
+        }
+      }
+      if (removedAny) {
+        setSubmitError(
+          'One or more items in your cart became unavailable and were removed.',
+        )
+      }
+      return nextCart
+    })
+  }, [])
 
   const loadMenu = useCallback(async () => {
     setIsLoadingMenu(true)
     setMenuError(null)
     try {
       const items = await fetchMenu()
-      setMenuItems(items)
+      syncMenuItems(items)
     } catch (error) {
       if (error instanceof ApiClientError) {
         setMenuError(error.message)
@@ -115,7 +121,7 @@ export function StudentPage() {
     } finally {
       setIsLoadingMenu(false)
     }
-  }, [])
+  }, [syncMenuItems])
 
   useEffect(() => {
     let active = true
@@ -123,7 +129,7 @@ export function StudentPage() {
     fetchMenu()
       .then((items) => {
         if (!active) return
-        setMenuItems(items)
+        syncMenuItems(items)
         setMenuError(null)
       })
       .catch((error: unknown) => {
@@ -144,7 +150,33 @@ export function StudentPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [syncMenuItems])
+
+  useEffect(() => {
+    if (subView !== 'menu' || placedOrder !== null) {
+      return
+    }
+
+    const timerId = window.setInterval(() => {
+      if (menuPollInFlightRef.current) return
+      menuPollInFlightRef.current = true
+      fetchMenu()
+        .then((items) => {
+          syncMenuItems(items)
+          setMenuError(null)
+        })
+        .catch(() => {
+          // Keep existing menu visible during transient background polling failures.
+        })
+        .finally(() => {
+          menuPollInFlightRef.current = false
+        })
+    }, MENU_POLL_INTERVAL_MS)
+
+    return () => {
+      window.clearInterval(timerId)
+    }
+  }, [subView, placedOrder, syncMenuItems])
 
   const { categories, categoryCounts } = useMemo(() => {
     const counts: Record<string, number> = {}

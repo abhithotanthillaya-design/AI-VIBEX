@@ -2,10 +2,17 @@ import type {
   ApiErrorBody,
   CreateOrderRequest,
   CreateOrderResponse,
+  DemoResetResponse,
   HealthResponse,
+  ManagerDashboard,
+  ManagerSalesSummary,
+  ManagerSlotSettings,
   MenuItem,
+  MenuItemDeleteResponse,
+  MenuItemUpsertRequest,
   OrderDetail,
   OrderStatus,
+  SlotClosureRequest,
   SlotWorkload,
 } from '../types'
 
@@ -130,3 +137,124 @@ export function fetchKitchenSlots(): Promise<SlotWorkload[]> {
   })
 }
 
+export function resetDemo(): Promise<DemoResetResponse> {
+  return apiRequest<DemoResetResponse>('/api/demo/reset', {
+    method: 'POST',
+  })
+}
+
+export function fetchManagerDashboard(): Promise<ManagerDashboard> {
+  return apiRequest<ManagerDashboard>('/api/manager/dashboard', {
+    method: 'GET',
+  })
+}
+
+export function fetchManagerMenu(): Promise<MenuItem[]> {
+  return apiRequest<MenuItem[]>('/api/manager/menu', {
+    method: 'GET',
+  })
+}
+
+export function createManagerMenuItem(
+  payload: MenuItemUpsertRequest,
+): Promise<MenuItem> {
+  return apiRequest<MenuItem>('/api/manager/menu', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateManagerMenuItem(
+  itemId: string,
+  payload: MenuItemUpsertRequest,
+): Promise<MenuItem> {
+  return apiRequest<MenuItem>(
+    `/api/manager/menu/${encodeURIComponent(itemId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function toggleManagerMenuAvailability(
+  itemId: string,
+  available: boolean,
+): Promise<MenuItem> {
+  return apiRequest<MenuItem>(
+    `/api/manager/menu/${encodeURIComponent(itemId)}/availability`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ available }),
+    },
+  )
+}
+
+export function deleteManagerMenuItem(
+  itemId: string,
+): Promise<MenuItemDeleteResponse> {
+  return apiRequest<MenuItemDeleteResponse>(
+    `/api/manager/menu/${encodeURIComponent(itemId)}`,
+    {
+      method: 'DELETE',
+    },
+  )
+}
+
+export interface ManagerOrderQueryParams {
+  status?: string
+  date?: string
+  search?: string
+}
+
+export function fetchManagerOrders(
+  params?: ManagerOrderQueryParams,
+): Promise<OrderDetail[]> {
+  const searchParams = new URLSearchParams()
+  if (params?.status) {
+    searchParams.set('status', params.status)
+  }
+  if (params?.date && params.date.trim()) {
+    searchParams.set('date', params.date.trim())
+  }
+  if (params?.search && params.search.trim()) {
+    searchParams.set('search', params.search.trim())
+  }
+  const query = searchParams.toString()
+  return apiRequest<OrderDetail[]>(
+    `/api/manager/orders${query ? `?${query}` : ''}`,
+    {
+      method: 'GET',
+    },
+  )
+}
+
+export function fetchManagerSales(): Promise<ManagerSalesSummary> {
+  return apiRequest<ManagerSalesSummary>('/api/manager/sales', {
+    method: 'GET',
+  })
+}
+
+export function fetchManagerSlots(): Promise<ManagerSlotSettings> {
+  return apiRequest<ManagerSlotSettings>('/api/manager/slots', {
+    method: 'GET',
+  })
+}
+
+export function updateManagerCapacity(
+  slotCapacityUnits: number,
+): Promise<ManagerSlotSettings> {
+  return apiRequest<ManagerSlotSettings>('/api/manager/settings/capacity', {
+    method: 'PATCH',
+    body: JSON.stringify({ slot_capacity_units: slotCapacityUnits }),
+  })
+}
+
+export function updateManagerSlotStatus(
+  payload: SlotClosureRequest,
+): Promise<SlotWorkload> {
+  return apiRequest<SlotWorkload>('/api/manager/slots/status', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}

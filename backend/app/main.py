@@ -5,14 +5,17 @@ from contextlib import asynccontextmanager
 import sqlite3
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
+from app.routes.demo import router as demo_router
 from app.routes.health import router as health_router
 from app.routes.kitchen import router as kitchen_router
+from app.routes.manager import router as manager_router
 from app.routes.menu import router as menu_router
 from app.routes.orders import router as orders_router
 from app.seed import seed_menu_items
@@ -65,12 +68,18 @@ def create_app() -> FastAPI:
     async def validation_exception_handler(
         _request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        safe_details = jsonable_encoder(exc.errors())
+        first_msg = (
+            str(safe_details[0].get("msg", "Invalid request payload or parameters."))
+            if safe_details
+            else "Invalid request payload or parameters."
+        )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "validation_error",
-                "message": "Invalid request payload or parameters.",
-                "details": exc.errors(),
+                "message": first_msg,
+                "details": safe_details,
             },
         )
 
@@ -90,6 +99,8 @@ def create_app() -> FastAPI:
     application.include_router(menu_router, prefix="/api")
     application.include_router(orders_router, prefix="/api")
     application.include_router(kitchen_router, prefix="/api")
+    application.include_router(manager_router, prefix="/api")
+    application.include_router(demo_router, prefix="/api")
     return application
 
 

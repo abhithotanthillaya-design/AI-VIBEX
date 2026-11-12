@@ -11,12 +11,14 @@ from app.database import db_session, write_transaction
 from app.schemas import (
     CreateOrderRequest,
     CreateOrderResponse,
+    DemoResetResponse,
     MenuItemResponse,
     OrderDetailResponse,
     OrderItemResponse,
     OrderStatus,
     SlotWorkloadResponse,
 )
+from app.seed import seed_menu_items
 
 # Unambiguous uppercase alphanumeric characters for short pickup codes (e.g. Q7K2).
 _PICKUP_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -58,6 +60,7 @@ def row_to_menu_item(row: sqlite3.Row) -> MenuItemResponse:
         price=int(row["price"]),
         prep_minutes=int(row["prep_minutes"]),
         available=bool(row["available"]),
+        is_veg=bool(row["is_veg"]),
         image_url=row["image_url"],
     )
 
@@ -100,10 +103,14 @@ def list_menu_items(
     category: str | None = None,
     search: str | None = None,
     include_unavailable: bool = False,
+    include_deleted: bool = False,
 ) -> list[MenuItemResponse]:
     """Query menu items from SQLite with optional filtering."""
     clauses: list[str] = []
     params: list[object] = []
+
+    if not include_deleted:
+        clauses.append("is_deleted = 0")
 
     if not include_unavailable:
         clauses.append("available = 1")
@@ -119,7 +126,7 @@ def list_menu_items(
 
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     query = f"""
-        SELECT id, name, description, category, price, prep_minutes, available, image_url
+        SELECT id, name, description, category, price, prep_minutes, available, is_veg, image_url
         FROM menu_items
         {where_sql}
         ORDER BY category ASC, name ASC
@@ -166,7 +173,7 @@ def create_order(
     with write_transaction() as conn:
         rows = conn.execute(
             f"""
-            SELECT id, name, price, prep_minutes, available
+            SELECT id, name, price, prep_minutes, available, is_deleted
             FROM menu_items
             WHERE id IN ({placeholders})
             """,
@@ -188,7 +195,7 @@ def create_order(
 
         for requested_id, qty in consolidated_quantities.items():
             menu_row = menu_by_id[requested_id]
-            if not bool(menu_row["available"]):
+            if bool(menu_row["is_deleted"]) or not bool(menu_row["available"]):
                 raise OrderValidationError(
                     f"'{menu_row['name']}' is currently unavailable.",
                     status_code=400,
@@ -327,6 +334,31 @@ def get_order_by_id(order_id: str) -> OrderDetailResponse | None:
         return _fetch_order_with_conn(conn, cleaned_id)
 
 
+def fetch_items_by_order(
+    conn: sqlite3.Connection,
+    order_ids: list[str],
+) -> dict[str, list[OrderItemResponse]]:
+    """Batch-fetch snapshotted order items grouped by parent order_id."""
+    if not order_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in order_ids)
+    item_rows = conn.execute(
+        f"""
+        SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, prep_minutes
+        FROM order_items
+        WHERE order_id IN ({placeholders})
+        ORDER BY rowid ASC
+        """,
+        order_ids,
+    ).fetchall()
+
+    items_by_order: dict[str, list[OrderItemResponse]] = {}
+    for row in item_rows:
+        parent_id = str(row["order_id"])
+        items_by_order.setdefault(parent_id, []).append(_row_to_order_item(row))
+    return items_by_order
+
+
 def list_kitchen_orders(
     *,
     status_filter: str | None = None,
@@ -367,21 +399,7 @@ def list_kitchen_orders(
             return []
 
         order_ids = [str(row["id"]) for row in order_rows]
-        placeholders = ", ".join("?" for _ in order_ids)
-        item_rows = conn.execute(
-            f"""
-            SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, prep_minutes
-            FROM order_items
-            WHERE order_id IN ({placeholders})
-            ORDER BY rowid ASC
-            """,
-            order_ids,
-        ).fetchall()
-
-    items_by_order: dict[str, list[OrderItemResponse]] = {}
-    for row in item_rows:
-        parent_id = str(row["order_id"])
-        items_by_order.setdefault(parent_id, []).append(_row_to_order_item(row))
+        items_by_order = fetch_items_by_order(conn, order_ids)
 
     return [
         _build_order_detail(row, items_by_order.get(str(row["id"]), []))
@@ -454,3 +472,45 @@ def list_kitchen_slots(settings: Settings) -> list[SlotWorkloadResponse]:
     """Read upcoming and active pickup slots with capacity metrics from SQLite."""
     with db_session() as conn:
         return get_kitchen_slot_workloads(conn, settings)
+
+
+def reset_demo_data(settings: Settings) -> DemoResetResponse:
+    """Clear demo orders transactionally while preserving the seeded canteen menu.
+
+    Restricted to non-production environments with ENABLE_DEMO_RESET=true.
+    """
+    if not settings.enable_demo_reset or settings.environment.strip().lower() == "production":
+        raise OrderValidationError(
+            "Demo reset is disabled in this environment.",
+            status_code=403,
+            code="demo_reset_disabled",
+        )
+
+    with write_transaction() as conn:
+        deleted_order_items = int(
+            conn.execute("SELECT COUNT(*) AS count FROM order_items").fetchone()["count"]
+        )
+        deleted_orders = int(
+            conn.execute("SELECT COUNT(*) AS count FROM orders").fetchone()["count"]
+        )
+
+        conn.execute("DELETE FROM order_items")
+        conn.execute("DELETE FROM orders")
+        seed_menu_items(conn)
+
+        available_menu_items = int(
+            conn.execute(
+                "SELECT COUNT(*) AS count FROM menu_items WHERE available = 1 AND is_deleted = 0"
+            ).fetchone()["count"]
+        )
+
+    return DemoResetResponse(
+        status="ok",
+        deleted_orders=deleted_orders,
+        deleted_order_items=deleted_order_items,
+        available_menu_items=available_menu_items,
+        message=(
+            f"Demo reset complete. Removed {deleted_orders} orders and restored "
+            f"a clean queue with {available_menu_items} available menu items."
+        ),
+    )

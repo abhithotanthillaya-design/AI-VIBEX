@@ -6,6 +6,8 @@ export type OrderStatus =
   | 'COLLECTED'
   | 'CANCELLED'
 
+export type MenuCategory = 'Meals' | 'Fast Food' | 'Snacks' | 'Beverages'
+
 export interface HealthResponse {
   status: string
   service: string
@@ -22,6 +24,7 @@ export interface MenuItem {
   price: number
   prep_minutes: number
   available: boolean
+  is_veg: boolean
   image_url?: string | null
 }
 
@@ -79,6 +82,8 @@ export interface SlotWorkload {
   active_orders: number
   is_full: boolean
   is_upcoming: boolean
+  is_closed: boolean
+  close_reason?: string | null
 }
 
 export interface ApiErrorBody {
@@ -92,4 +97,77 @@ export interface CartItem {
   quantity: number
 }
 
+export interface DemoResetResponse {
+  status: string
+  deleted_orders: number
+  deleted_order_items: number
+  available_menu_items: number
+  message: string
+}
 
+export interface MenuItemUpsertRequest {
+  name: string
+  description: string
+  category: MenuCategory
+  price: number
+  prep_minutes: number
+  image_url?: string | null
+  is_veg: boolean
+  available: boolean
+}
+
+export interface MenuItemDeleteResponse {
+  status: string
+  id: string
+  archived: boolean
+  message: string
+}
+
+export interface ManagerDashboard {
+  today_date: string
+  today_sales_paise: number
+  today_orders: number
+  active_orders: number
+  completed_orders: number
+  cancelled_orders: number
+  total_menu_items: number
+  available_menu_items: number
+  unavailable_menu_items: number
+  current_slot: SlotWorkload | null
+  busiest_slot: SlotWorkload | null
+}
+
+export interface DailySalesPoint {
+  date: string
+  label: string
+  order_count: number
+  revenue_paise: number
+}
+
+export interface PopularMenuItemStat {
+  menu_item_id: string
+  item_name: string
+  quantity_sold: number
+  revenue_paise: number
+}
+
+export interface ManagerSalesSummary {
+  today_sales_paise: number
+  total_collected_orders: number
+  total_collected_revenue_paise: number
+  average_order_value_paise: number
+  daily_sales: DailySalesPoint[]
+  top_items: PopularMenuItemStat[]
+}
+
+export interface ManagerSlotSettings {
+  slot_capacity_units: number
+  slot_duration_minutes: number
+  slots: SlotWorkload[]
+}
+
+export interface SlotClosureRequest {
+  slot_start: string
+  is_closed: boolean
+  reason?: string | null
+}

@@ -67,7 +67,11 @@ export function SlotWorkloadPanel({ slots, isLoading }: SlotWorkloadPanelProps) 
                   <span className="text-xs font-semibold text-stone-900">
                     {formatTimeWindow(slot.slot_start, slot.slot_end)}
                   </span>
-                  {slot.is_full ? (
+                  {slot.is_closed ? (
+                    <span className="rounded-full border border-stone-300 bg-stone-200 px-2 py-0.5 text-[11px] font-semibold text-stone-800">
+                      Closed
+                    </span>
+                  ) : slot.is_full ? (
                     <span className="rounded-full border border-rose-200 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
                       Full
                     </span>

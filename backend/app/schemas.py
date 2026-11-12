@@ -25,7 +25,7 @@ class HealthResponse(BaseModel):
 
 
 class MenuItemResponse(BaseModel):
-    """Menu item payload returned by /api/menu."""
+    """Menu item payload returned by /api/menu and /api/manager/menu."""
 
     id: str
     name: str
@@ -34,6 +34,7 @@ class MenuItemResponse(BaseModel):
     price: int = Field(ge=0, description="Price in paise")
     prep_minutes: int = Field(gt=0, description="Estimated preparation units/minutes")
     available: bool
+    is_veg: bool = True
     image_url: str | None = None
 
 
@@ -136,4 +137,180 @@ class SlotWorkloadResponse(BaseModel):
     active_orders: int
     is_full: bool
     is_upcoming: bool
+    is_closed: bool = False
+    close_reason: str | None = None
+
+
+class DemoResetResponse(BaseModel):
+    """Payload returned by POST /api/demo/reset (hackathon demo mode only)."""
+
+    status: str
+    deleted_orders: int
+    deleted_order_items: int
+    available_menu_items: int
+    message: str
+
+
+MenuCategory = Literal["Meals", "Fast Food", "Snacks", "Beverages"]
+
+_CANONICAL_CATEGORIES: dict[str, MenuCategory] = {
+    "meals": "Meals",
+    "fast food": "Fast Food",
+    "snacks": "Snacks",
+    "beverages": "Beverages",
+}
+
+
+class MenuItemUpsertRequest(BaseModel):
+    """Payload accepted by POST /api/manager/menu and PUT /api/manager/menu/{item_id}."""
+
+    name: str = Field(min_length=2, max_length=80)
+    description: str = Field(min_length=4, max_length=300)
+    category: MenuCategory
+    price: int = Field(gt=0, le=500000, description="Positive price in paise")
+    prep_minutes: int = Field(gt=0, le=60, description="Positive preparation time")
+    image_url: str | None = Field(default=None, max_length=500)
+    is_veg: bool = True
+    available: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Ensure dish name is non-blank and within bounds."""
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise ValueError("Item name must be at least 2 characters.")
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str) -> str:
+        """Ensure description is non-blank and within bounds."""
+        cleaned = value.strip()
+        if len(cleaned) < 4:
+            raise ValueError("Description must be at least 4 characters.")
+        return cleaned
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category(cls, value: object) -> str:
+        """Normalize supported category names case-insensitively."""
+        if not isinstance(value, str):
+            raise ValueError("Category must be a string.")
+        canonical = _CANONICAL_CATEGORIES.get(value.strip().lower())
+        if canonical is None:
+            raise ValueError(
+                "Category must be one of: Meals, Fast Food, Snacks, Beverages."
+            )
+        return canonical
+
+    @field_validator("image_url")
+    @classmethod
+    def validate_image_url(cls, value: str | None) -> str | None:
+        """Allow relative / paths or http(s) URLs; reject unsafe schemes."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if not (
+            cleaned.startswith("/")
+            or cleaned.startswith("https://")
+            or cleaned.startswith("http://")
+        ):
+            raise ValueError(
+                "Image URL must start with '/', 'http://', or 'https://'."
+            )
+        return cleaned
+
+
+class MenuItemAvailabilityRequest(BaseModel):
+    """Payload accepted by PATCH /api/manager/menu/{item_id}/availability."""
+
+    available: bool
+
+
+class MenuItemDeleteResponse(BaseModel):
+    """Payload returned by DELETE /api/manager/menu/{item_id}."""
+
+    status: str
+    id: str
+    archived: bool
+    message: str
+
+
+class ManagerDashboardResponse(BaseModel):
+    """Real-time KPI summary returned by GET /api/manager/dashboard."""
+
+    today_date: str
+    today_sales_paise: int
+    today_orders: int
+    active_orders: int
+    completed_orders: int
+    cancelled_orders: int
+    total_menu_items: int
+    available_menu_items: int
+    unavailable_menu_items: int
+    current_slot: SlotWorkloadResponse | None = None
+    busiest_slot: SlotWorkloadResponse | None = None
+
+
+class DailySalesPoint(BaseModel):
+    """Single day bucket in the 7-day sales summary."""
+
+    date: str
+    label: str
+    order_count: int
+    revenue_paise: int
+
+
+class PopularMenuItemStat(BaseModel):
+    """Aggregated item sales stat across collected orders."""
+
+    menu_item_id: str
+    item_name: str
+    quantity_sold: int
+    revenue_paise: int
+
+
+class ManagerSalesSummaryResponse(BaseModel):
+    """Finalized sales analytics returned by GET /api/manager/sales."""
+
+    today_sales_paise: int
+    total_collected_orders: int
+    total_collected_revenue_paise: int
+    average_order_value_paise: int
+    daily_sales: list[DailySalesPoint]
+    top_items: list[PopularMenuItemStat]
+
+
+class ManagerSlotSettingsResponse(BaseModel):
+    """Slot capacity configuration and live pickup-slot controls."""
+
+    slot_capacity_units: int
+    slot_duration_minutes: int
+    slots: list[SlotWorkloadResponse]
+
+
+class CapacityUpdateRequest(BaseModel):
+    """Payload accepted by PATCH /api/manager/settings/capacity."""
+
+    slot_capacity_units: int = Field(ge=1, le=100)
+
+
+class SlotClosureRequest(BaseModel):
+    """Payload accepted by PATCH /api/manager/slots/status."""
+
+    slot_start: str = Field(min_length=1, max_length=64)
+    is_closed: bool
+    reason: str | None = Field(default=None, max_length=160)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str | None) -> str | None:
+        """Trim optional slot closure reason."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 

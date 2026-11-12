@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { ChefHat, UtensilsCrossed, Wifi, WifiOff } from 'lucide-react'
+import { ChefHat, LayoutDashboard, UtensilsCrossed, Wifi, WifiOff } from 'lucide-react'
 
-export type AppView = 'student' | 'kitchen'
+export type AppView = 'student' | 'kitchen' | 'manager'
 
 interface AppShellProps {
   activeView: AppView
@@ -41,20 +41,27 @@ export function AppShell({
 
           <div className="flex items-center gap-3">
             <div
-              className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
                 apiConnected === true
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                   : apiConnected === false
                     ? 'border-rose-200 bg-rose-50 text-rose-800'
                     : 'border-stone-200 bg-stone-100 text-stone-600'
               }`}
+              aria-label={
+                apiConnected === true
+                  ? 'API Connected'
+                  : apiConnected === false
+                    ? 'API Offline'
+                    : 'Checking API'
+              }
             >
               {apiConnected === false ? (
                 <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
                 <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
               )}
-              <span>
+              <span className="hidden sm:inline">
                 {apiConnected === true
                   ? 'API Connected'
                   : apiConnected === false
@@ -91,6 +98,18 @@ export function AppShell({
                 <ChefHat className="h-4 w-4" aria-hidden="true" />
                 <span>Kitchen</span>
               </button>
+              <button
+                type="button"
+                onClick={() => onViewChange('manager')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer ${
+                  activeView === 'manager'
+                    ? 'bg-white text-stone-900 shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                <span>Manager</span>
+              </button>
             </nav>
           </div>
         </div>
@@ -99,6 +118,16 @@ export function AppShell({
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         {children}
       </main>
+
+      <footer className="border-t border-stone-200/70 bg-white/60">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-stone-500 sm:px-6">
+          <span>QUEUELESS · Campus Canteen Pre-Order Prototype</span>
+          <span>
+            Deterministic capacity-aware pickup scheduling · Demo mode (no live
+            payments)
+          </span>
+        </div>
+      </footer>
     </div>
   )
 }

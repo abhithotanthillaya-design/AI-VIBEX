@@ -4,6 +4,7 @@ import type { MenuItem } from '../types'
 import { formatRupees } from '../utils/format'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
+import { VegBadge } from './ui/VegBadge'
 
 interface MenuCardProps {
   item: MenuItem
@@ -50,9 +51,12 @@ export function MenuCard({
 
       <div className="flex flex-1 flex-col justify-between p-4">
         <div>
-          <h3 className="text-base font-semibold leading-snug text-stone-900">
-            {item.name}
-          </h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-base font-semibold leading-snug text-stone-900">
+              {item.name}
+            </h3>
+            <VegBadge isVeg={item.is_veg} />
+          </div>
           <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-stone-600">
             {item.description}
           </p>

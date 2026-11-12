@@ -18,6 +18,7 @@ class SeedMenuItem:
     prep_minutes: int
     available: bool
     image_url: str
+    is_veg: bool = True
 
 
 SEED_MENU_ITEMS: tuple[SeedMenuItem, ...] = (
@@ -151,8 +152,8 @@ def seed_menu_items(conn: sqlite3.Connection | None = None) -> int:
     """
     sql = """
         INSERT OR IGNORE INTO menu_items (
-            id, name, description, category, price, prep_minutes, available, image_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, name, description, category, price, prep_minutes, available, is_veg, is_deleted, image_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
     """
     params = [
         (
@@ -163,6 +164,7 @@ def seed_menu_items(conn: sqlite3.Connection | None = None) -> int:
             item.price,
             item.prep_minutes,
             1 if item.available else 0,
+            1 if item.is_veg else 0,
             item.image_url,
         )
         for item in SEED_MENU_ITEMS

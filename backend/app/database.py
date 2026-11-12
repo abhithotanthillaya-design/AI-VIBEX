@@ -78,7 +78,21 @@ def init_db() -> None:
                 price INTEGER NOT NULL CHECK (price >= 0),
                 prep_minutes INTEGER NOT NULL CHECK (prep_minutes > 0),
                 available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0, 1)),
+                is_veg INTEGER NOT NULL DEFAULT 1 CHECK (is_veg IN (0, 1)),
+                is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
                 image_url TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS canteen_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS closed_slots (
+                slot_start TEXT PRIMARY KEY,
+                reason TEXT,
+                closed_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS orders (
@@ -117,6 +131,20 @@ def init_db() -> None:
                 ON order_items(order_id);
             """
         )
+
+        # Safe additive migration for existing SQLite databases from Phases 1-5.
+        existing_cols = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(menu_items);").fetchall()
+        }
+        if "is_veg" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE menu_items ADD COLUMN is_veg INTEGER NOT NULL DEFAULT 1;"
+            )
+        if "is_deleted" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE menu_items ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;"
+            )
 
 
 def check_db_health() -> bool:

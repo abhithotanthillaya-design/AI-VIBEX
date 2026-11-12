@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
@@ -41,8 +41,14 @@ export function OrderTrackingPage({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+  const inFlightRef = useRef<boolean>(false)
 
   const loadOrder = useCallback(async (orderId: string, background = false) => {
+    if (inFlightRef.current) {
+      return
+    }
+    inFlightRef.current = true
+
     if (background) {
       setIsRefreshing(true)
     } else {
@@ -72,6 +78,7 @@ export function OrderTrackingPage({
         setOrder(null)
       }
     } finally {
+      inFlightRef.current = false
       setIsLoading(false)
       setIsRefreshing(false)
     }

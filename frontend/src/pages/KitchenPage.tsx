@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
+  CheckCircle2,
   ChefHat,
   Clock,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react'
 import {
   ApiClientError,
   fetchKitchenOrders,
   fetchKitchenSlots,
+  resetDemo,
   updateKitchenOrderStatus,
 } from '../api/client'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -21,11 +24,13 @@ import { SlotWorkloadPanel } from '../components/SlotWorkloadPanel'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import type { OrderDetail, OrderStatus, SlotWorkload } from '../types'
+import { executeGuardedDemoReset } from '../utils/demoReset'
 import { formatTimeWindow } from '../utils/format'
 import {
   computeKitchenSummary,
   groupOrdersBySlot,
 } from '../utils/kitchen'
+import { writeStoredOrderId } from '../utils/storage'
 
 const KITCHEN_POLL_INTERVAL_MS = 4000
 
@@ -59,7 +64,11 @@ function KitchenQueueSkeleton() {
   )
 }
 
-export function KitchenPage() {
+interface KitchenPageProps {
+  onDemoReset?: () => void
+}
+
+export function KitchenPage({ onDemoReset }: KitchenPageProps) {
   const [activeOrders, setActiveOrders] = useState<OrderDetail[]>([])
   const [collectedOrders, setCollectedOrders] = useState<OrderDetail[]>([])
   const [slots, setSlots] = useState<SlotWorkload[]>([])
@@ -68,12 +77,16 @@ export function KitchenPage() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [resetNotice, setResetNotice] = useState<string | null>(null)
   const [updatingOrderIds, setUpdatingOrderIds] = useState<Record<string, boolean>>({})
   const [pendingCollectionOrder, setPendingCollectionOrder] =
     useState<OrderDetail | null>(null)
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState<boolean>(false)
+  const [isResettingDemo, setIsResettingDemo] = useState<boolean>(false)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
 
   const inFlightRef = useRef<boolean>(false)
+  const resetInFlightRef = useRef<boolean>(false)
   const mountedRef = useRef<boolean>(true)
 
   const syncKitchenData = useCallback(
@@ -217,6 +230,7 @@ export function KitchenPage() {
       }
 
       setActionError(null)
+      setResetNotice(null)
       setUpdatingOrderIds((prev) => ({ ...prev, [order.id]: true }))
 
       try {
@@ -247,7 +261,6 @@ export function KitchenPage() {
             ? err.message
             : 'Failed to update order status.'
         setActionError(message)
-        // Re-sync queue immediately in case another kitchen screen changed this order.
         void syncKitchenData(statusFilter)
       } finally {
         setUpdatingOrderIds((prev) => {
@@ -259,6 +272,41 @@ export function KitchenPage() {
     },
     [statusFilter, syncKitchenData, updatingOrderIds],
   )
+
+  const handleConfirmDemoReset = useCallback(async () => {
+    if (!isResetDialogOpen || resetInFlightRef.current) {
+      return
+    }
+
+    setActionError(null)
+    setResetNotice(null)
+    setIsResettingDemo(true)
+
+    const outcome = await executeGuardedDemoReset({
+      isConfirmed: isResetDialogOpen,
+      guard: resetInFlightRef,
+      resetFn: resetDemo,
+      onAfterSuccess: async () => {
+        writeStoredOrderId(null)
+        setPendingCollectionOrder(null)
+        setCollectedOrders([])
+        setStatusFilter('ACTIVE')
+        onDemoReset?.()
+        await syncKitchenData('ACTIVE')
+      },
+    })
+
+    if (!mountedRef.current) return
+
+    setIsResettingDemo(false)
+    setIsResetDialogOpen(false)
+
+    if (outcome.status === 'success') {
+      setResetNotice(outcome.response.message)
+    } else if (outcome.status === 'error') {
+      setActionError(outcome.message)
+    }
+  }, [isResetDialogOpen, onDemoReset, syncKitchenData])
 
   const summary = useMemo(
     () => computeKitchenSummary(activeOrders),
@@ -308,16 +356,49 @@ export function KitchenPage() {
           </p>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={isRefreshing}
-          onClick={handleManualRefresh}
-          icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
-        >
-          Refresh Queue
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={isRefreshing}
+            onClick={handleManualRefresh}
+            icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
+          >
+            Refresh Queue
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={isResettingDemo}
+            onClick={() => {
+              setActionError(null)
+              setIsResetDialogOpen(true)
+            }}
+            icon={<RotateCcw className="h-4 w-4 text-rose-700" aria-hidden="true" />}
+          >
+            Reset Demo
+          </Button>
+        </div>
       </div>
+
+      {resetNotice && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+        >
+          <span className="inline-flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+            <span>{resetNotice}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setResetNotice(null)}
+            className="text-xs font-semibold underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <KitchenSummaryCards
         summary={summary}
@@ -532,6 +613,21 @@ export function KitchenPage() {
           if (pendingCollectionOrder) {
             void handleAdvanceStatus(pendingCollectionOrder, 'COLLECTED')
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={isResetDialogOpen}
+        title="Reset hackathon demo?"
+        description="All demo orders and student order-tracking records will be permanently removed. Seeded menu items will be preserved and all pickup-slot capacities will return to zero."
+        confirmLabel="Reset Demo"
+        confirmVariant="danger"
+        isConfirming={isResettingDemo}
+        onCancel={() => {
+          if (!isResettingDemo) setIsResetDialogOpen(false)
+        }}
+        onConfirm={() => {
+          void handleConfirmDemoReset()
         }}
       />
     </section>
