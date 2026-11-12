@@ -5,7 +5,7 @@ import secrets
 import sqlite3
 import uuid
 
-from app.allocator import allocate_pickup_slot
+from app.allocator import allocate_pickup_slot, get_kitchen_slot_workloads
 from app.config import Settings
 from app.database import db_session, write_transaction
 from app.schemas import (
@@ -15,14 +15,31 @@ from app.schemas import (
     OrderDetailResponse,
     OrderItemResponse,
     OrderStatus,
+    SlotWorkloadResponse,
 )
 
 # Unambiguous uppercase alphanumeric characters for short pickup codes (e.g. Q7K2).
 _PICKUP_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
+ALLOWED_STATUS_TRANSITIONS: dict[str, OrderStatus] = {
+    "PLACED": "ACCEPTED",
+    "ACCEPTED": "PREPARING",
+    "PREPARING": "READY",
+    "READY": "COLLECTED",
+}
+
+VALID_ORDER_STATUSES: set[str] = {
+    "PLACED",
+    "ACCEPTED",
+    "PREPARING",
+    "READY",
+    "COLLECTED",
+    "CANCELLED",
+}
+
 
 class OrderValidationError(Exception):
-    """Raised when an incoming order fails domain validation against menu data."""
+    """Raised when an incoming order or status update fails domain validation."""
 
     def __init__(self, message: str, status_code: int = 400, code: str = "order_error") -> None:
         super().__init__(message)
@@ -42,6 +59,39 @@ def row_to_menu_item(row: sqlite3.Row) -> MenuItemResponse:
         prep_minutes=int(row["prep_minutes"]),
         available=bool(row["available"]),
         image_url=row["image_url"],
+    )
+
+
+def _row_to_order_item(row: sqlite3.Row) -> OrderItemResponse:
+    """Convert a SQLite order_items row into a validated Pydantic model."""
+    return OrderItemResponse(
+        id=str(row["id"]),
+        menu_item_id=str(row["menu_item_id"]),
+        item_name=str(row["item_name"]),
+        quantity=int(row["quantity"]),
+        unit_price=int(row["unit_price"]),
+        prep_minutes=int(row["prep_minutes"]),
+    )
+
+
+def _build_order_detail(
+    order_row: sqlite3.Row,
+    items: list[OrderItemResponse],
+) -> OrderDetailResponse:
+    """Combine an orders row and its items into OrderDetailResponse."""
+    return OrderDetailResponse(
+        id=str(order_row["id"]),
+        pickup_code=str(order_row["pickup_code"]),
+        customer_name=str(order_row["customer_name"]),
+        status=str(order_row["status"]),  # type: ignore[arg-type]
+        pickup_slot_start=str(order_row["pickup_slot_start"]),
+        pickup_slot_end=str(order_row["pickup_slot_end"]),
+        total_amount=int(order_row["total_amount"]),
+        total_prep_units=int(order_row["total_prep_units"]),
+        notes=order_row["notes"],
+        created_at=str(order_row["created_at"]),
+        updated_at=str(order_row["updated_at"]),
+        items=items,
     )
 
 
@@ -231,6 +281,42 @@ def create_order(
     )
 
 
+def _fetch_order_with_conn(
+    conn: sqlite3.Connection,
+    order_id: str,
+) -> OrderDetailResponse | None:
+    """Fetch a single order and its snapshotted items using an existing connection."""
+    order_row = conn.execute(
+        """
+        SELECT id, pickup_code, customer_name, status,
+               pickup_slot_start, pickup_slot_end,
+               total_amount, total_prep_units, notes,
+               created_at, updated_at
+        FROM orders
+        WHERE id = ?
+        """,
+        (order_id,),
+    ).fetchone()
+
+    if order_row is None:
+        return None
+
+    item_rows = conn.execute(
+        """
+        SELECT id, menu_item_id, item_name, quantity, unit_price, prep_minutes
+        FROM order_items
+        WHERE order_id = ?
+        ORDER BY rowid ASC
+        """,
+        (order_id,),
+    ).fetchall()
+
+    return _build_order_detail(
+        order_row,
+        [_row_to_order_item(row) for row in item_rows],
+    )
+
+
 def get_order_by_id(order_id: str) -> OrderDetailResponse | None:
     """Fetch a single order and its snapshotted items by order ID."""
     cleaned_id = order_id.strip()
@@ -238,52 +324,133 @@ def get_order_by_id(order_id: str) -> OrderDetailResponse | None:
         return None
 
     with db_session() as conn:
-        order_row = conn.execute(
-            """
+        return _fetch_order_with_conn(conn, cleaned_id)
+
+
+def list_kitchen_orders(
+    *,
+    status_filter: str | None = None,
+) -> list[OrderDetailResponse]:
+    """Return kitchen orders sorted by pickup window and creation time.
+
+    Defaults to active orders (excluding COLLECTED and CANCELLED).
+    """
+    normalized = (status_filter or "active").strip().upper()
+    if normalized == "ACTIVE":
+        where_sql = "WHERE status NOT IN ('COLLECTED', 'CANCELLED')"
+        params: tuple[object, ...] = ()
+    elif normalized in VALID_ORDER_STATUSES:
+        where_sql = "WHERE status = ?"
+        params = (normalized,)
+    else:
+        raise OrderValidationError(
+            f"Unsupported status filter '{status_filter}'.",
+            status_code=400,
+            code="invalid_status_filter",
+        )
+
+    with db_session() as conn:
+        order_rows = conn.execute(
+            f"""
             SELECT id, pickup_code, customer_name, status,
                    pickup_slot_start, pickup_slot_end,
                    total_amount, total_prep_units, notes,
                    created_at, updated_at
             FROM orders
-            WHERE id = ?
+            {where_sql}
+            ORDER BY pickup_slot_start ASC, created_at ASC
             """,
-            (cleaned_id,),
-        ).fetchone()
-
-        if order_row is None:
-            return None
-
-        item_rows = conn.execute(
-            """
-            SELECT id, menu_item_id, item_name, quantity, unit_price, prep_minutes
-            FROM order_items
-            WHERE order_id = ?
-            ORDER BY rowid ASC
-            """,
-            (cleaned_id,),
+            params,
         ).fetchall()
 
-    return OrderDetailResponse(
-        id=str(order_row["id"]),
-        pickup_code=str(order_row["pickup_code"]),
-        customer_name=str(order_row["customer_name"]),
-        status=str(order_row["status"]),  # type: ignore[arg-type]
-        pickup_slot_start=str(order_row["pickup_slot_start"]),
-        pickup_slot_end=str(order_row["pickup_slot_end"]),
-        total_amount=int(order_row["total_amount"]),
-        total_prep_units=int(order_row["total_prep_units"]),
-        notes=order_row["notes"],
-        created_at=str(order_row["created_at"]),
-        updated_at=str(order_row["updated_at"]),
-        items=[
-            OrderItemResponse(
-                id=str(item["id"]),
-                menu_item_id=str(item["menu_item_id"]),
-                item_name=str(item["item_name"]),
-                quantity=int(item["quantity"]),
-                unit_price=int(item["unit_price"]),
-                prep_minutes=int(item["prep_minutes"]),
+        if not order_rows:
+            return []
+
+        order_ids = [str(row["id"]) for row in order_rows]
+        placeholders = ", ".join("?" for _ in order_ids)
+        item_rows = conn.execute(
+            f"""
+            SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, prep_minutes
+            FROM order_items
+            WHERE order_id IN ({placeholders})
+            ORDER BY rowid ASC
+            """,
+            order_ids,
+        ).fetchall()
+
+    items_by_order: dict[str, list[OrderItemResponse]] = {}
+    for row in item_rows:
+        parent_id = str(row["order_id"])
+        items_by_order.setdefault(parent_id, []).append(_row_to_order_item(row))
+
+    return [
+        _build_order_detail(row, items_by_order.get(str(row["id"]), []))
+        for row in order_rows
+    ]
+
+
+def update_kitchen_order_status(
+    order_id: str,
+    next_status: OrderStatus,
+    settings: Settings,
+) -> OrderDetailResponse:
+    """Validate and apply an atomic kitchen order status transition."""
+    cleaned_id = order_id.strip()
+    if not cleaned_id:
+        raise OrderValidationError(
+            "Order ID is required.",
+            status_code=400,
+            code="invalid_order_id",
+        )
+
+    with write_transaction() as conn:
+        row = conn.execute(
+            "SELECT status FROM orders WHERE id = ?",
+            (cleaned_id,),
+        ).fetchone()
+        if row is None:
+            raise OrderValidationError(
+                f"Order '{cleaned_id}' was not found.",
+                status_code=404,
+                code="order_not_found",
             )
-            for item in item_rows
-        ],
-    )
+
+        current_status = str(row["status"])
+        if current_status == next_status:
+            raise OrderValidationError(
+                f"Order '{cleaned_id}' is already marked as '{current_status}'.",
+                status_code=409,
+                code="duplicate_status_transition",
+            )
+
+        expected_next = ALLOWED_STATUS_TRANSITIONS.get(current_status)
+        if expected_next is None:
+            raise OrderValidationError(
+                f"Order '{cleaned_id}' is in terminal status '{current_status}' and cannot be updated.",
+                status_code=400,
+                code="invalid_status_transition",
+            )
+
+        if next_status != expected_next:
+            raise OrderValidationError(
+                f"Invalid status transition from '{current_status}' to '{next_status}'. Expected '{expected_next}'.",
+                status_code=400,
+                code="invalid_status_transition",
+            )
+
+        now_iso = datetime.now(settings.zone_info).isoformat(timespec="seconds")
+        conn.execute(
+            "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?",
+            (next_status, now_iso, cleaned_id),
+        )
+        updated = _fetch_order_with_conn(conn, cleaned_id)
+
+    if updated is None:
+        raise RuntimeError(f"Order '{cleaned_id}' disappeared after status update.")
+    return updated
+
+
+def list_kitchen_slots(settings: Settings) -> list[SlotWorkloadResponse]:
+    """Read upcoming and active pickup slots with capacity metrics from SQLite."""
+    with db_session() as conn:
+        return get_kitchen_slot_workloads(conn, settings)

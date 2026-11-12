@@ -77,6 +77,8 @@ export interface SlotWorkload {
   capacity_units: number
   remaining_units: number
   active_orders: number
+  is_full: boolean
+  is_upcoming: boolean
 }
 
 export interface ApiErrorBody {

@@ -6,6 +6,7 @@ import math
 import sqlite3
 
 from app.config import Settings
+from app.schemas import SlotWorkloadResponse
 
 ACTIVE_WORKLOAD_STATUSES = ("PLACED", "ACCEPTED", "PREPARING", "READY")
 MAX_EXTENSION_SLOTS = 24  # Up to 2 hours ahead at 5-minute intervals
@@ -51,7 +52,7 @@ def align_to_slot_start(reference_time: datetime, slot_duration_minutes: int) ->
 
 def get_active_slot_workloads(
     conn: sqlite3.Connection,
-    earliest_slot_start: datetime,
+    earliest_slot_start: datetime | None = None,
 ) -> dict[datetime, tuple[int, int]]:
     """Aggregate active preparation units and active order counts by slot start.
 
@@ -69,7 +70,7 @@ def get_active_slot_workloads(
     workloads: dict[datetime, tuple[int, int]] = {}
     for row in rows:
         slot_start = datetime.fromisoformat(str(row["pickup_slot_start"]))
-        if slot_start < earliest_slot_start:
+        if earliest_slot_start is not None and slot_start < earliest_slot_start:
             continue
         prev_units, prev_count = workloads.get(slot_start, (0, 0))
         workloads[slot_start] = (
@@ -77,6 +78,47 @@ def get_active_slot_workloads(
             prev_count + 1,
         )
     return workloads
+
+
+def get_kitchen_slot_workloads(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    reference_time: datetime | None = None,
+) -> list[SlotWorkloadResponse]:
+    """Return upcoming pickup slots and any active-order slots with workload metrics."""
+    now = reference_time or datetime.now(settings.zone_info)
+    slot_duration = settings.slot_duration_minutes
+    slot_capacity = settings.slot_capacity_units
+    first_upcoming = align_to_slot_start(now, slot_duration)
+
+    active_workloads = get_active_slot_workloads(conn, earliest_slot_start=None)
+
+    base_slot_count = max(1, math.ceil(settings.slot_lookahead_minutes / slot_duration))
+    slot_starts: set[datetime] = {
+        first_upcoming + timedelta(minutes=index * slot_duration)
+        for index in range(base_slot_count)
+    }
+    slot_starts.update(active_workloads.keys())
+
+    slots: list[SlotWorkloadResponse] = []
+    for slot_start in sorted(slot_starts):
+        slot_end = slot_start + timedelta(minutes=slot_duration)
+        used_units, active_orders = active_workloads.get(slot_start, (0, 0))
+        remaining_units = max(0, slot_capacity - used_units)
+        slots.append(
+            SlotWorkloadResponse(
+                slot_start=slot_start.isoformat(timespec="seconds"),
+                slot_end=slot_end.isoformat(timespec="seconds"),
+                used_units=used_units,
+                capacity_units=slot_capacity,
+                remaining_units=remaining_units,
+                active_orders=active_orders,
+                is_full=used_units >= slot_capacity,
+                is_upcoming=slot_start >= first_upcoming,
+            )
+        )
+    return slots
 
 
 def allocate_pickup_slot(

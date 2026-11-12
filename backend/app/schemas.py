@@ -117,3 +117,23 @@ class OrderDetailResponse(BaseModel):
     created_at: str
     updated_at: str
     items: list[OrderItemResponse]
+
+
+class OrderStatusUpdateRequest(BaseModel):
+    """Payload accepted by PATCH /api/kitchen/orders/{order_id}/status."""
+
+    status: OrderStatus
+
+
+class SlotWorkloadResponse(BaseModel):
+    """Pickup-slot capacity and active workload summary returned by /api/kitchen/slots."""
+
+    slot_start: str
+    slot_end: str
+    used_units: int
+    capacity_units: int
+    remaining_units: int
+    active_orders: int
+    is_full: bool
+    is_upcoming: bool
+

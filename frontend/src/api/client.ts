@@ -5,6 +5,8 @@ import type {
   HealthResponse,
   MenuItem,
   OrderDetail,
+  OrderStatus,
+  SlotWorkload,
 } from '../types'
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -97,5 +99,34 @@ export function fetchOrder(orderId: string): Promise<OrderDetail> {
       method: 'GET',
     },
   )
+}
+
+export function fetchKitchenOrders(status = 'active'): Promise<OrderDetail[]> {
+  const searchParams = new URLSearchParams({ status })
+  return apiRequest<OrderDetail[]>(
+    `/api/kitchen/orders?${searchParams.toString()}`,
+    {
+      method: 'GET',
+    },
+  )
+}
+
+export function updateKitchenOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+): Promise<OrderDetail> {
+  return apiRequest<OrderDetail>(
+    `/api/kitchen/orders/${encodeURIComponent(orderId)}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    },
+  )
+}
+
+export function fetchKitchenSlots(): Promise<SlotWorkload[]> {
+  return apiRequest<SlotWorkload[]>('/api/kitchen/slots', {
+    method: 'GET',
+  })
 }
 

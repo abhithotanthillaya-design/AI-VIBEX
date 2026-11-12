@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.database import init_db
 from app.routes.health import router as health_router
+from app.routes.kitchen import router as kitchen_router
 from app.routes.menu import router as menu_router
 from app.routes.orders import router as orders_router
 from app.seed import seed_menu_items
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     application.include_router(health_router, prefix="/api")
     application.include_router(menu_router, prefix="/api")
     application.include_router(orders_router, prefix="/api")
+    application.include_router(kitchen_router, prefix="/api")
     return application
 
 
