@@ -1,4 +1,14 @@
-import { AlertCircle, ArrowRight, Banknote, Clock, CreditCard, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowRight,
+  Banknote,
+  Clock,
+  CreditCard,
+  Minus,
+  Plus,
+  ShoppingBag,
+  Trash2,
+} from 'lucide-react'
 import type { FormEvent } from 'react'
 import type {
   AvailablePickupSlot,
@@ -10,6 +20,7 @@ import { formatRupees } from '../utils/format'
 import { PickupSlotSelector } from './PickupSlotSelector'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
+import { FormField, Input, Textarea } from './ui/FormControls'
 
 interface CartPanelProps {
   items: CartItem[]
@@ -83,14 +94,14 @@ export function CartPanel({
 
   return (
     <Card id="cart-panel" className="flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-stone-100 px-5 py-4">
+      <div className="flex items-center justify-between border-b border-[#E4DED2] px-5 py-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E3EFE8] text-[#1A4D38]">
             <ShoppingBag className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-stone-900">Your Cart</h2>
-            <p className="text-xs text-stone-500">
+            <h2 className="text-base font-semibold text-[#1E1D1A]">Your Tray</h2>
+            <p className="text-xs text-[#5B564D] tabular-nums">
               {totals.itemCount === 0
                 ? 'No items selected'
                 : `${totals.itemCount} ${totals.itemCount === 1 ? 'item' : 'items'} added`}
@@ -103,7 +114,7 @@ export function CartPanel({
             type="button"
             disabled={isSubmitting}
             onClick={onClearCart}
-            className="rounded-lg px-2.5 py-1 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:opacity-50 cursor-pointer"
+            className="rounded-lg px-2.5 py-1 text-xs font-medium text-[#5B564D] transition-colors hover:bg-[#EFEAE0] hover:text-[#1E1D1A] disabled:opacity-50 cursor-pointer"
           >
             Clear all
           </button>
@@ -112,33 +123,33 @@ export function CartPanel({
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#EFEAE0] text-[#787166]">
             <ShoppingBag className="h-6 w-6" aria-hidden="true" />
           </div>
-          <p className="mt-3 text-sm font-medium text-stone-800">
+          <p className="mt-3 text-sm font-semibold text-[#1E1D1A]">
             Your canteen tray is empty
           </p>
-          <p className="mt-1 max-w-[230px] text-xs leading-relaxed text-stone-500">
-            Select dishes from the menu to place a pre-order and receive an
-            assigned pickup window.
+          <p className="mt-1 max-w-[235px] text-xs leading-relaxed text-[#5B564D]">
+            Select dishes from the menu to pre-order into an open 5-minute
+            pickup slot.
           </p>
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
-          <ul className="max-h-[280px] divide-y divide-stone-100 overflow-y-auto px-5">
+          <ul className="max-h-[280px] divide-y divide-[#E4DED2] overflow-y-auto px-5">
             {items.map(({ item, quantity }) => (
               <li key={item.id} className="flex items-start justify-between gap-3 py-3.5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-stone-900">
+                  <p className="truncate text-sm font-medium text-[#1E1D1A]">
                     {item.name}
                   </p>
-                  <p className="mt-0.5 text-xs text-stone-500">
+                  <p className="mt-0.5 text-xs text-[#5B564D] tabular-nums">
                     {formatRupees(item.price)} each · {item.prep_minutes * quantity}m prep load
                   </p>
 
                   <div className="mt-2 flex items-center gap-2">
                     <div
-                      className="inline-flex items-center rounded-lg border border-stone-200 bg-stone-50 p-0.5"
+                      className="inline-flex items-center rounded-lg border border-[#D8D0C1] bg-[#F7F4ED] p-0.5"
                       role="group"
                       aria-label={`Cart quantity for ${item.name}`}
                     >
@@ -147,11 +158,11 @@ export function CartPanel({
                         disabled={isSubmitting}
                         onClick={() => onUpdateQuantity(item.id, -1)}
                         aria-label={`Decrease cart quantity of ${item.name}`}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-stone-700 hover:bg-white disabled:opacity-50 cursor-pointer"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-[#1E1D1A] hover:bg-[#FCFBF8] disabled:opacity-50 cursor-pointer"
                       >
                         <Minus className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
-                      <span className="min-w-6 text-center text-xs font-semibold text-stone-900">
+                      <span className="min-w-6 text-center text-xs font-semibold text-[#1E1D1A] tabular-nums">
                         {quantity}
                       </span>
                       <button
@@ -159,7 +170,7 @@ export function CartPanel({
                         disabled={isSubmitting}
                         onClick={() => onUpdateQuantity(item.id, 1)}
                         aria-label={`Increase cart quantity of ${item.name}`}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-stone-700 hover:bg-white disabled:opacity-50 cursor-pointer"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-[#1E1D1A] hover:bg-[#FCFBF8] disabled:opacity-50 cursor-pointer"
                       >
                         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -170,30 +181,24 @@ export function CartPanel({
                       disabled={isSubmitting}
                       onClick={() => onRemoveItem(item.id)}
                       aria-label={`Remove ${item.name} from cart`}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 cursor-pointer"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-[#787166] transition-colors hover:bg-[#FBEDED] hover:text-[#9F2D2D] disabled:opacity-50 cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                   </div>
                 </div>
 
-                <span className="shrink-0 text-sm font-semibold text-stone-900">
+                <span className="shrink-0 text-sm font-semibold text-[#1E1D1A] tabular-nums">
                   {formatRupees(item.price * quantity)}
                 </span>
               </li>
             ))}
           </ul>
 
-          <div className="space-y-4 border-t border-stone-200/80 bg-stone-50/70 px-5 py-4">
+          <div className="space-y-4 border-t border-[#E4DED2] bg-[#F7F4ED]/80 px-5 py-4">
             <div className="space-y-3">
-              <div>
-                <label
-                  htmlFor="customer-name"
-                  className="block text-xs font-medium text-stone-700"
-                >
-                  Student Name <span className="text-rose-600">*</span>
-                </label>
-                <input
+              <FormField id="customer-name" label="Student Name" required>
+                <Input
                   id="customer-name"
                   type="text"
                   value={customerName}
@@ -202,23 +207,22 @@ export function CartPanel({
                   placeholder="e.g. Aarav Sharma"
                   maxLength={80}
                   required
-                  className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none disabled:bg-stone-100"
                 />
-              </div>
+              </FormField>
 
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <label
                     htmlFor="order-notes"
-                    className="block text-xs font-medium text-stone-700"
+                    className="block text-xs font-medium text-[#3F3B34]"
                   >
                     Special Instructions &amp; Allergy Notes (optional)
                   </label>
-                  <span className="text-[11px] text-stone-400">
+                  <span className="text-[11px] text-[#787166] tabular-nums">
                     {notes.length}/300
                   </span>
                 </div>
-                <textarea
+                <Textarea
                   id="order-notes"
                   rows={2}
                   value={notes}
@@ -226,17 +230,16 @@ export function CartPanel({
                   onChange={(event) => onNotesChange(event.target.value)}
                   placeholder="e.g. Less spicy, no onion, no added sugar, peanut sensitivity"
                   maxLength={300}
-                  className="mt-1 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none disabled:bg-stone-100"
+                  className="mt-1.5 resize-none"
                 />
-                <p className="mt-1 text-[11px] leading-snug text-stone-500">
-                  Special instructions are shared with kitchen staff, but
-                  allergen-free preparation cannot be guaranteed unless confirmed
-                  at the counter.
+                <p className="mt-1 text-[11px] leading-snug text-[#5B564D]">
+                  Shared with kitchen staff; allergen-free preparation cannot be
+                  guaranteed unless confirmed at counter.
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <span className="block text-xs font-medium text-stone-700">
+                <span className="block text-xs font-medium text-[#3F3B34]">
                   Payment Method (Demo Only)
                 </span>
                 <div
@@ -252,8 +255,8 @@ export function CartPanel({
                     onClick={() => onPaymentMethodChange('COUNTER_CASH')}
                     className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer ${
                       paymentMethod === 'COUNTER_CASH'
-                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
-                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                        ? 'border-[#1A4D38] bg-[#E3EFE8] text-[#143B2B] ring-1 ring-[#1A4D38]'
+                        : 'border-[#D8D0C1] bg-[#FCFBF8] text-[#5B564D] hover:bg-[#EFEAE0]/60'
                     }`}
                   >
                     <Banknote className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -267,17 +270,16 @@ export function CartPanel({
                     onClick={() => onPaymentMethodChange('DEMO_UPI')}
                     className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer ${
                       paymentMethod === 'DEMO_UPI'
-                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
-                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                        ? 'border-[#1A4D38] bg-[#E3EFE8] text-[#143B2B] ring-1 ring-[#1A4D38]'
+                        : 'border-[#D8D0C1] bg-[#FCFBF8] text-[#5B564D] hover:bg-[#EFEAE0]/60'
                     }`}
                   >
                     <CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>Demo UPI</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-stone-500">
-                  Demo Payment — No real money is charged. Never asks for real
-                  UPI PINs or card details.
+                <p className="text-[11px] text-[#787166]">
+                  Demo Payment — No real money is charged or banking info stored.
                 </p>
               </div>
             </div>
@@ -300,21 +302,21 @@ export function CartPanel({
               onRefresh={onRefreshSlots}
             />
 
-            <div className="space-y-1.5 border-t border-stone-200/80 pt-3 text-sm">
-              <div className="flex items-center justify-between text-stone-600">
+            <div className="space-y-1.5 border-t border-[#E4DED2] pt-3 text-sm tabular-nums">
+              <div className="flex items-center justify-between text-[#5B564D]">
                 <span>Subtotal ({totals.itemCount} items)</span>
                 <span>{formatRupees(totals.subtotalPaise)}</span>
               </div>
-              <div className="flex items-center justify-between text-stone-600">
+              <div className="flex items-center justify-between text-[#5B564D]">
                 <span className="inline-flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-stone-400" aria-hidden="true" />
+                  <Clock className="h-3.5 w-3.5 text-[#787166]" aria-hidden="true" />
                   <span>Est. kitchen workload</span>
                 </span>
-                <span className="font-medium text-stone-800">
+                <span className="font-medium text-[#1E1D1A]">
                   {totals.totalPrepUnits} prep units
                 </span>
               </div>
-              <div className="flex items-center justify-between border-t border-stone-200 pt-2.5 text-base font-semibold text-stone-900">
+              <div className="flex items-center justify-between border-t border-[#D8D0C1] pt-2.5 text-base font-semibold text-[#1E1D1A]">
                 <span>Total</span>
                 <span>{formatRupees(totals.totalPaise)}</span>
               </div>
@@ -323,7 +325,7 @@ export function CartPanel({
             {submitError && (
               <div
                 role="alert"
-                className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800"
+                className="flex items-start gap-2 rounded-xl border border-[#E7BDBD] bg-[#FBEDED] px-3 py-2.5 text-xs text-[#842323]"
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{submitError}</span>
@@ -341,11 +343,6 @@ export function CartPanel({
             >
               {isSubmitting ? 'Validating Pickup Slot...' : 'Place Order'}
             </Button>
-
-            <p className="text-center text-[11px] leading-relaxed text-stone-500">
-              Demo pre-order mode · Prices and selected pickup slot capacity are
-              verified atomically on the server.
-            </p>
           </div>
         </form>
       )}

@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -13,13 +13,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    'bg-emerald-700 text-white hover:bg-emerald-800 active:bg-emerald-900 shadow-xs',
+    'bg-[#1A4D38] text-[#FCFBF8] hover:bg-[#143B2B] active:bg-[#0F2E21] shadow-xs hover:-translate-y-[0.5px] active:translate-y-0',
   secondary:
-    'bg-white text-stone-900 border border-stone-300 hover:bg-stone-50 active:bg-stone-100',
+    'bg-[#FCFBF8] text-[#1E1D1A] border border-[#D8D0C1] hover:bg-[#EFEAE0]/70 hover:border-[#C7BFA9] active:bg-[#EFEAE0]',
   ghost:
-    'bg-transparent text-stone-700 hover:bg-stone-100 active:bg-stone-200',
+    'bg-transparent text-[#5B564D] hover:bg-[#EFEAE0]/70 hover:text-[#1E1D1A] active:bg-[#EFEAE0]',
   danger:
-    'bg-rose-700 text-white hover:bg-rose-800 active:bg-rose-900 shadow-xs',
+    'bg-[#9F2D2D] text-[#FCFBF8] hover:bg-[#842323] active:bg-[#6E1C1C] shadow-xs',
+  accent:
+    'bg-[#C25E3A] text-[#FCFBF8] hover:bg-[#AA4E2E] active:bg-[#934226] shadow-xs hover:-translate-y-[0.5px] active:translate-y-0',
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
@@ -45,7 +47,7 @@ export function Button({
     <button
       type={type}
       disabled={isDisabled}
-      className={`inline-flex items-center justify-center gap-2 font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-55 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-55 disabled:translate-y-0 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
       {...props}
     >
       {loading ? (
@@ -57,4 +59,3 @@ export function Button({
     </button>
   )
 }
-

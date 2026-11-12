@@ -336,32 +336,32 @@ export function OrderTrackingPage({
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-stone-500">
+                <div className="rounded-2xl border border-[#D8D0C1] bg-[#F7F4ED] p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-[#5B564D]">
                     Pickup Code
                   </p>
-                  <p className="mt-1.5 font-mono text-3xl font-bold tracking-widest text-stone-900">
+                  <p className="mt-1.5 font-mono text-3xl font-bold tracking-widest text-[#1E1D1A] tabular-nums">
                     {order.pickup_code}
                   </p>
-                  <p className="mt-1 text-xs text-stone-500">
+                  <p className="mt-1 text-xs text-[#5B564D]">
                     Show this token at the counter
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-emerald-800">
+                <div className="rounded-2xl border border-[#BDD6C7] bg-[#E3EFE8]/55 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-[#143B2B]">
                     Pickup Window
                   </p>
-                  <div className="mt-1.5 flex items-center gap-2 text-stone-900">
-                    <Clock className="h-5 w-5 text-emerald-700" aria-hidden="true" />
-                    <span className="text-lg font-semibold">
+                  <div className="mt-1.5 flex items-center gap-2 text-[#1E1D1A]">
+                    <Clock className="h-5 w-5 text-[#1A4D38]" aria-hidden="true" />
+                    <span className="text-lg font-semibold tabular-nums">
                       {formatTimeWindow(
                         order.pickup_slot_start,
                         order.pickup_slot_end,
                       )}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-stone-600">
+                  <p className="mt-1 text-xs text-[#2F533E] tabular-nums">
                     Estimated kitchen load: {order.total_prep_units} units
                   </p>
                 </div>

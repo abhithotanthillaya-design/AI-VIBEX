@@ -2,6 +2,8 @@ import { BarChart3, IndianRupee, Receipt, TrendingUp } from 'lucide-react'
 import type { ManagerSalesSummary } from '../../types'
 import { formatRupees } from '../../utils/format'
 import { Card } from '../ui/Card'
+import { Skeleton } from '../ui/Skeleton'
+import { EmptyState } from '../ui/States'
 
 interface ManagerSalesSectionProps {
   sales: ManagerSalesSummary | null
@@ -15,12 +17,12 @@ export function ManagerSalesSection({
   if (isLoading && !sales) {
     return (
       <div className="space-y-4" aria-busy="true">
-        <div className="grid gap-4 sm:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, idx) => (
-            <Card key={idx} className="h-24 animate-pulse bg-stone-100" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <Skeleton key={idx} className="h-24" />
           ))}
         </div>
-        <Card className="h-60 animate-pulse bg-stone-100" />
+        <Skeleton className="h-60" />
       </div>
     )
   }
@@ -36,79 +38,87 @@ export function ManagerSalesSection({
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-stone-200/80 bg-white px-4 py-2.5 text-xs text-stone-600">
-        Sales figures count finalized <strong className="text-stone-900">COLLECTED</strong> orders only. Cancelled and in-progress orders are excluded.
+      <div className="rounded-xl border border-[#E4DED2] bg-[#FCFBF8] px-4 py-2.5 text-xs text-[#5B564D]">
+        Sales figures count finalized{' '}
+        <strong className="text-[#1E1D1A]">COLLECTED</strong> orders only.
+        Cancelled and in-progress orders are excluded.
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-stone-500">
+            <span className="text-xs font-medium text-[#5B564D]">
               Today&apos;s Sales
             </span>
-            <IndianRupee className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E3EFE8] text-[#1A4D38]">
+              <IndianRupee className="h-4 w-4" aria-hidden="true" />
+            </span>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-stone-900">
+          <p className="mt-2 text-2xl font-semibold text-[#1E1D1A] tabular-nums">
             {formatRupees(sales.today_sales_paise)}
           </p>
         </Card>
 
         <Card className="p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-stone-500">
+            <span className="text-xs font-medium text-[#5B564D]">
               Total Collected Orders
             </span>
-            <Receipt className="h-4 w-4 text-stone-600" aria-hidden="true" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#EFEAE0] text-[#3F3B34]">
+              <Receipt className="h-4 w-4" aria-hidden="true" />
+            </span>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-stone-900">
+          <p className="mt-2 text-2xl font-semibold text-[#1E1D1A] tabular-nums">
             {sales.total_collected_orders}
           </p>
         </Card>
 
         <Card className="p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-stone-500">
+            <span className="text-xs font-medium text-[#5B564D]">
               Average Order Value
             </span>
-            <TrendingUp className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E3EFE8] text-[#1A4D38]">
+              <TrendingUp className="h-4 w-4" aria-hidden="true" />
+            </span>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-stone-900">
+          <p className="mt-2 text-2xl font-semibold text-[#1E1D1A] tabular-nums">
             {formatRupees(sales.average_order_value_paise)}
           </p>
         </Card>
 
         <Card className="p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-stone-500">
+            <span className="text-xs font-medium text-[#5B564D]">
               Total Finalized Revenue
             </span>
-            <BarChart3 className="h-4 w-4 text-stone-600" aria-hidden="true" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#F9ECE6] text-[#C25E3A]">
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+            </span>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-stone-900">
+          <p className="mt-2 text-2xl font-semibold text-[#1E1D1A] tabular-nums">
             {formatRupees(sales.total_collected_revenue_paise)}
           </p>
         </Card>
       </div>
 
       {sales.total_collected_orders === 0 ? (
-        <Card className="p-8 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
-            <BarChart3 className="h-6 w-6" aria-hidden="true" />
-          </div>
-          <h3 className="mt-3 text-base font-semibold text-stone-900">
-            No finalized sales recorded yet
-          </h3>
-          <p className="mt-1 text-sm text-stone-600">
-            Once kitchen staff mark orders as Collected, daily revenue and top
-            items will appear here automatically.
-          </p>
-        </Card>
+        <EmptyState
+          icon={<BarChart3 className="h-6 w-6" aria-hidden="true" />}
+          title="No finalized sales recorded yet"
+          description="Once kitchen staff mark orders as Collected, daily revenue trends and top items will appear here automatically."
+        />
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
           <Card className="p-5">
-            <h3 className="text-sm font-semibold text-stone-900">
-              Recent 7-Day Sales (IST)
-            </h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[#1E1D1A]">
+                Recent 7-Day Sales (IST)
+              </h3>
+              <span className="text-[11px] font-medium text-[#787166]">
+                Revenue distribution
+              </span>
+            </div>
             <div className="mt-4 space-y-3">
               {sales.daily_sales.map((day) => {
                 const widthPct =
@@ -120,21 +130,21 @@ export function ManagerSalesSection({
                     : 0
                 return (
                   <div key={day.date} className="space-y-1">
-                    <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
-                      <span className="font-medium text-stone-700">
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-xs tabular-nums">
+                      <span className="font-medium text-[#3F3B34]">
                         {day.label}
                       </span>
-                      <span className="text-stone-600">
+                      <span className="text-[#5B564D]">
                         {day.order_count}{' '}
                         {day.order_count === 1 ? 'order' : 'orders'} ·{' '}
-                        <strong className="text-stone-900">
+                        <strong className="text-[#1E1D1A]">
                           {formatRupees(day.revenue_paise)}
                         </strong>
                       </span>
                     </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-stone-100">
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#EFEAE0]">
                       <div
-                        className="h-full rounded-full bg-emerald-600 transition-all duration-300"
+                        className="h-full rounded-full bg-[#1A4D38] transition-all duration-300"
                         style={{ width: `${widthPct}%` }}
                       />
                     </div>
@@ -145,29 +155,29 @@ export function ManagerSalesSection({
           </Card>
 
           <Card className="p-5">
-            <h3 className="text-sm font-semibold text-stone-900">
+            <h3 className="text-sm font-semibold text-[#1E1D1A]">
               Most Frequently Ordered Items
             </h3>
-            <ul className="mt-4 divide-y divide-stone-100">
+            <ul className="mt-4 divide-y divide-[#E4DED2]">
               {sales.top_items.map((item, index) => (
                 <li
                   key={`${item.menu_item_id}-${item.item_name}`}
                   className="flex items-center justify-between py-3 text-sm"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-100 text-xs font-semibold text-stone-700">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E3EFE8] text-xs font-semibold text-[#143B2B] tabular-nums">
                       {index + 1}
                     </span>
                     <div>
-                      <p className="font-medium text-stone-900">
+                      <p className="font-medium text-[#1E1D1A]">
                         {item.item_name}
                       </p>
-                      <p className="text-xs text-stone-500">
+                      <p className="text-xs text-[#5B564D] tabular-nums">
                         {item.quantity_sold} sold
                       </p>
                     </div>
                   </div>
-                  <span className="font-semibold text-stone-900">
+                  <span className="font-semibold text-[#1E1D1A] tabular-nums">
                     {formatRupees(item.revenue_paise)}
                   </span>
                 </li>
@@ -179,4 +189,3 @@ export function ManagerSalesSection({
     </div>
   )
 }
-

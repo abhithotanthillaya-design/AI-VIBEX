@@ -18,32 +18,32 @@ interface StatusStyle {
 const ORDER_STATUS_STYLES: Record<OrderStatus, StatusStyle> = {
   PLACED: {
     label: 'Placed',
-    classes: 'bg-stone-100 text-stone-800 border-stone-200',
+    classes: 'border-[#D8D0C1] bg-[#EFEAE0]/80 text-[#3F3B34]',
     icon: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
   },
   ACCEPTED: {
     label: 'Accepted',
-    classes: 'bg-sky-50 text-sky-800 border-sky-200',
+    classes: 'border-[#C2D6E8] bg-[#ECF4FA] text-[#1D4B73]',
     icon: <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />,
   },
   PREPARING: {
     label: 'Preparing',
-    classes: 'bg-amber-50 text-amber-800 border-amber-200',
+    classes: 'border-[#E7D4AF] bg-[#FBF4E4] text-[#7D5214]',
     icon: <ChefHat className="h-3.5 w-3.5" aria-hidden="true" />,
   },
   READY: {
     label: 'Ready for Pickup',
-    classes: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    classes: 'border-[#BDD6C7] bg-[#E3EFE8] text-[#143B2B]',
     icon: <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />,
   },
   COLLECTED: {
     label: 'Collected',
-    classes: 'bg-stone-100 text-stone-600 border-stone-200',
+    classes: 'border-[#D8D0C1] bg-[#EFEAE0]/60 text-[#5B564D]',
     icon: <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />,
   },
   CANCELLED: {
     label: 'Cancelled',
-    classes: 'bg-rose-50 text-rose-800 border-rose-200',
+    classes: 'border-[#E7BDBD] bg-[#FBEDED] text-[#842323]',
     icon: <XCircle className="h-3.5 w-3.5" aria-hidden="true" />,
   },
 }

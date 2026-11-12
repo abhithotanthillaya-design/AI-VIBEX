@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   fetchCurrentSession,
   fetchHealth,
@@ -8,14 +8,25 @@ import {
 } from './api/client'
 import { AppShell } from './components/layout/AppShell'
 import { Card } from './components/ui/Card'
-import { KitchenPage } from './pages/KitchenPage'
+import { Skeleton } from './components/ui/Skeleton'
+import { ToastViewport, type ToastItem } from './components/ui/Toast'
 import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
-import { ManagerPage } from './pages/ManagerPage'
-import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
-import { StudentPage } from './pages/StudentPage'
 import { UnauthorizedPage } from './pages/UnauthorizedPage'
+
+const StudentPage = lazy(() =>
+  import('./pages/StudentPage').then((mod) => ({ default: mod.StudentPage })),
+)
+const KitchenPage = lazy(() =>
+  import('./pages/KitchenPage').then((mod) => ({ default: mod.KitchenPage })),
+)
+const ManagerPage = lazy(() =>
+  import('./pages/ManagerPage').then((mod) => ({ default: mod.ManagerPage })),
+)
+const ProfilePage = lazy(() =>
+  import('./pages/ProfilePage').then((mod) => ({ default: mod.ProfilePage })),
+)
 import type { AuthenticatedUser, AuthSessionResponse } from './types'
 import {
   type AppRoute,
@@ -28,6 +39,18 @@ import {
   clearStoredPickupTokens,
   writeStoredOrderId,
 } from './utils/storage'
+import { subscribeToToasts } from './utils/toast'
+
+const ROUTE_TITLES: Record<AppRoute, string> = {
+  '/': 'QUEUELESS — Skip the queue. Not your meal.',
+  '/login': 'Sign In · QUEUELESS',
+  '/register': 'Student Registration · QUEUELESS',
+  '/student': 'Student Pre-Order · QUEUELESS',
+  '/kitchen': 'Kitchen Operations · QUEUELESS',
+  '/manager': 'Manager Console · QUEUELESS',
+  '/profile': 'Account & Password · QUEUELESS',
+  '/unauthorized': 'Access Denied · QUEUELESS',
+}
 
 function clearBrowserStudentOrderState() {
   writeStoredOrderId(null)
@@ -56,11 +79,35 @@ export default function App() {
   const [authNotice, setAuthNotice] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false)
   const [apiConnected, setApiConnected] = useState<boolean | null>(null)
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+  const toastIdRef = useRef(0)
 
   const currentUserRef = useRef<AuthenticatedUser | null>(null)
   useEffect(() => {
     currentUserRef.current = currentUser
   }, [currentUser])
+
+  useEffect(() => {
+    document.title = ROUTE_TITLES[activeRoute]
+  }, [activeRoute])
+
+  useEffect(() => {
+    const timers: number[] = []
+    const unsubscribe = subscribeToToasts((message, tone) => {
+      const id = ++toastIdRef.current
+      setToasts((prev) => [...prev.slice(-2), { id, message, tone }])
+      const timer = window.setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id))
+      }, 3200)
+      timers.push(timer)
+    })
+    return () => {
+      unsubscribe()
+      for (const timer of timers) {
+        window.clearTimeout(timer)
+      }
+    }
+  }, [])
 
   const navigate = useCallback(
     (targetPath: AppRoute, options?: { replace?: boolean; clearNotice?: boolean }) => {
@@ -320,17 +367,35 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      currentUser={currentUser}
-      activeRoute={activeRoute}
-      onNavigate={(route) => navigate(route)}
-      onLogout={() => {
-        void handleLogout()
-      }}
-      isLoggingOut={isLoggingOut}
-      apiConnected={apiConnected}
-    >
-      {renderContent()}
-    </AppShell>
+    <>
+      <AppShell
+        currentUser={currentUser}
+        activeRoute={activeRoute}
+        onNavigate={(route) => navigate(route)}
+        onLogout={() => {
+          void handleLogout()
+        }}
+        isLoggingOut={isLoggingOut}
+        apiConnected={apiConnected}
+      >
+        <Suspense
+          fallback={
+            <Card className="space-y-3 p-6" aria-busy="true">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-72" />
+              <Skeleton className="h-40 w-full" />
+            </Card>
+          }
+        >
+          {renderContent()}
+        </Suspense>
+      </AppShell>
+      <ToastViewport
+        toasts={toasts}
+        onDismiss={(id) =>
+          setToasts((prev) => prev.filter((item) => item.id !== id))
+        }
+      />
+    </>
   )
 }

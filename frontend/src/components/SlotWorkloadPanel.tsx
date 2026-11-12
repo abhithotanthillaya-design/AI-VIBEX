@@ -1,7 +1,9 @@
 import { Clock } from 'lucide-react'
 import type { SlotWorkload } from '../types'
 import { formatTimeWindow } from '../utils/format'
+import { Badge } from './ui/Badge'
 import { Card } from './ui/Card'
+import { Skeleton } from './ui/Skeleton'
 
 interface SlotWorkloadPanelProps {
   slots: SlotWorkload[]
@@ -13,12 +15,12 @@ export function SlotWorkloadPanel({ slots, isLoading }: SlotWorkloadPanelProps) 
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-emerald-700" aria-hidden="true" />
-          <h2 className="text-sm font-semibold text-stone-900">
+          <Clock className="h-4 w-4 text-[#1A4D38]" aria-hidden="true" />
+          <h2 className="text-sm font-semibold text-[#1E1D1A]">
             Pickup Slot Capacity
           </h2>
         </div>
-        <p className="text-xs text-stone-500">
+        <p className="text-xs text-[#5B564D]">
           5-minute windows · live kitchen preparation units
         </p>
       </div>
@@ -29,14 +31,11 @@ export function SlotWorkloadPanel({ slots, isLoading }: SlotWorkloadPanelProps) 
           aria-hidden="true"
         >
           {Array.from({ length: 6 }).map((_, index) => (
-            <div
-              key={index}
-              className="h-20 animate-pulse rounded-xl bg-stone-100"
-            />
+            <Skeleton key={index} className="h-20" />
           ))}
         </div>
       ) : slots.length === 0 ? (
-        <p className="mt-3 text-sm text-stone-500">
+        <p className="mt-3 text-sm text-[#5B564D]">
           No upcoming pickup slots available.
         </p>
       ) : (
@@ -47,53 +46,47 @@ export function SlotWorkloadPanel({ slots, isLoading }: SlotWorkloadPanelProps) 
                 ? Math.min(100, Math.round((slot.used_units / slot.capacity_units) * 100))
                 : 0
             const barColor = slot.is_full
-              ? 'bg-rose-600'
+              ? 'bg-[#9F2D2D]'
               : ratio >= 75
-                ? 'bg-amber-500'
-                : 'bg-emerald-600'
+                ? 'bg-[#A87122]'
+                : 'bg-[#1A4D38]'
 
             return (
               <div
                 key={slot.slot_start}
                 className={`rounded-xl border p-3.5 transition-colors ${
                   slot.is_full
-                    ? 'border-rose-200 bg-rose-50/40'
+                    ? 'border-[#E7BDBD] bg-[#FBEDED]/55'
                     : slot.active_orders > 0
-                      ? 'border-stone-200 bg-stone-50/60'
-                      : 'border-stone-200/80 bg-white'
+                      ? 'border-[#D8D0C1] bg-[#F7F4ED]'
+                      : 'border-[#E4DED2] bg-[#FCFBF8]'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-stone-900">
+                  <span className="text-xs font-semibold text-[#1E1D1A] tabular-nums">
                     {formatTimeWindow(slot.slot_start, slot.slot_end)}
                   </span>
                   {slot.is_closed ? (
-                    <span className="rounded-full border border-stone-300 bg-stone-200 px-2 py-0.5 text-[11px] font-semibold text-stone-800">
-                      Closed
-                    </span>
+                    <Badge tone="neutral">Closed</Badge>
                   ) : slot.is_full ? (
-                    <span className="rounded-full border border-rose-200 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
-                      Full
-                    </span>
+                    <Badge tone="danger">Full</Badge>
                   ) : !slot.is_upcoming && slot.active_orders > 0 ? (
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                      Past Window
-                    </span>
+                    <Badge tone="saffron">Past Window</Badge>
                   ) : (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                    <Badge tone="forest" className="tabular-nums">
                       {slot.remaining_units} left
-                    </span>
+                    </Badge>
                   )}
                 </div>
 
-                <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-stone-200/80">
+                <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-[#E4DED2]">
                   <div
                     className={`h-full rounded-full transition-all duration-300 ${barColor}`}
                     style={{ width: `${ratio}%` }}
                   />
                 </div>
 
-                <div className="mt-2 flex items-center justify-between text-[11px] text-stone-600">
+                <div className="mt-2 flex items-center justify-between text-[11px] text-[#5B564D] tabular-nums">
                   <span>
                     {slot.used_units} / {slot.capacity_units} units
                   </span>
@@ -110,4 +103,3 @@ export function SlotWorkloadPanel({ slots, isLoading }: SlotWorkloadPanelProps) 
     </Card>
   )
 }
-

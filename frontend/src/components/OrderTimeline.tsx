@@ -38,7 +38,7 @@ const STEPS: TimelineStep[] = [
   {
     status: 'READY',
     title: 'Ready for Pickup',
-    description: 'Head to the counter with your pickup code.',
+    description: 'Head to the counter with your QR or pickup code.',
     icon: <Sparkles className="h-4 w-4" aria-hidden="true" />,
   },
   {
@@ -56,11 +56,11 @@ interface OrderTimelineProps {
 export function OrderTimeline({ status }: OrderTimelineProps) {
   if (status === 'CANCELLED') {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-rose-900">
-        <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-700" aria-hidden="true" />
+      <div className="flex items-start gap-3 rounded-2xl border border-[#E7BDBD] bg-[#FBEDED] p-4 text-[#842323]">
+        <XCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
         <div>
           <p className="text-sm font-semibold">Order Cancelled</p>
-          <p className="mt-0.5 text-xs text-rose-800">
+          <p className="mt-0.5 text-xs">
             This order was cancelled and its pickup-slot capacity has been
             released.
           </p>
@@ -83,7 +83,7 @@ export function OrderTimeline({ status }: OrderTimelineProps) {
               <span
                 aria-hidden="true"
                 className={`absolute left-4 top-8 h-[calc(100%-0.5rem)] w-0.5 ${
-                  index < activeIndex ? 'bg-emerald-600' : 'bg-stone-200'
+                  index < activeIndex ? 'bg-[#1A4D38]' : 'bg-[#D8D0C1]'
                 }`}
               />
             )}
@@ -91,31 +91,31 @@ export function OrderTimeline({ status }: OrderTimelineProps) {
             <div
               className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
                 isCompleted
-                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                  ? 'border-[#1A4D38] bg-[#1A4D38] text-[#FCFBF8]'
                   : isCurrent
-                    ? 'border-emerald-700 bg-emerald-50 text-emerald-800 ring-4 ring-emerald-100'
-                    : 'border-stone-200 bg-white text-stone-400'
+                    ? 'border-[#1A4D38] bg-[#E3EFE8] text-[#1A4D38] ring-4 ring-[#E3EFE8]'
+                    : 'border-[#D8D0C1] bg-[#FCFBF8] text-[#8E867B]'
               }`}
             >
               {step.icon}
             </div>
 
-            <div className="min-w-0 flex-1 pb-2 pt-0.5">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-0 pt-0.5">
+              <div className="flex items-center gap-2">
                 <p
                   className={`text-sm font-semibold ${
-                    isCompleted || isCurrent ? 'text-stone-900' : 'text-stone-500'
+                    isCompleted || isCurrent ? 'text-[#1E1D1A]' : 'text-[#787166]'
                   }`}
                 >
                   {step.title}
                 </p>
                 {isCurrent && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                    Current stage
+                  <span className="rounded-full bg-[#E3EFE8] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#143B2B]">
+                    Current
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 text-xs text-stone-500">{step.description}</p>
+              <p className="mt-0.5 text-xs text-[#5B564D]">{step.description}</p>
             </div>
           </li>
         )
@@ -123,4 +123,3 @@ export function OrderTimeline({ status }: OrderTimelineProps) {
     </ol>
   )
 }
-

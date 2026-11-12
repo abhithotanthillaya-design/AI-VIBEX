@@ -373,23 +373,23 @@ export function KitchenPage({
   }, [slots])
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <section className="space-y-6 pb-20 sm:pb-0 ql-animate-enter">
+      <div className="flex flex-col gap-3.5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#BDD6C7] bg-[#E3EFE8] px-3 py-1 text-xs font-medium text-[#143B2B] tabular-nums">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[#1A4D38]" />
             <span>
               {currentUserName ? `${currentUserName} · ` : ''}
               Live · Auto-refreshing every 4s
               {lastUpdatedAt ? ` · Updated ${lastUpdatedAt}` : ''}
             </span>
           </div>
-          <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
+          <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-[#1E1D1A] sm:text-3xl">
             Kitchen Live Queue
           </h1>
-          <p className="mt-1 text-sm text-stone-600">
-            Monitor slot capacity, accept incoming pre-orders, and update
-            preparation progress in real time.
+          <p className="mt-1 text-sm text-[#5B564D]">
+            Monitor slot capacity, accept incoming pre-orders, verify QR passes,
+            and advance preparation in real time.
           </p>
         </div>
 
@@ -420,12 +420,25 @@ export function KitchenPage({
                 setActionError(null)
                 setIsResetDialogOpen(true)
               }}
-              icon={<RotateCcw className="h-4 w-4 text-rose-700" aria-hidden="true" />}
+              icon={<RotateCcw className="h-4 w-4 text-[#9F2D2D]" aria-hidden="true" />}
             >
               Reset Demo
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Prominent floating mobile QR scan trigger */}
+      <div className="fixed bottom-4 right-4 z-30 sm:hidden">
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={() => setIsScannerOpen(true)}
+          className="shadow-lg"
+          icon={<QrCode className="h-4 w-4" aria-hidden="true" />}
+        >
+          Scan QR
+        </Button>
       </div>
 
       {resetNotice && (

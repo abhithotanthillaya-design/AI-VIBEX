@@ -22,16 +22,16 @@ export function UnauthorizedPage({
     : '/login'
 
   return (
-    <section className="mx-auto max-w-lg py-8">
-      <Card className="border-rose-200 bg-white p-6 sm:p-8 text-center space-y-4">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
+    <section className="mx-auto max-w-lg py-10 ql-animate-enter">
+      <Card className="space-y-4 border-[#E7BDBD] p-6 text-center sm:p-8">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FBEDED] text-[#842323]">
           <ShieldAlert className="h-6 w-6" aria-hidden="true" />
         </div>
         <div className="space-y-1.5">
-          <h1 className="text-xl font-semibold text-stone-900">
+          <h1 className="text-xl font-semibold text-[#1E1D1A]">
             Access Denied
           </h1>
-          <p className="text-sm text-stone-600">
+          <p className="text-sm leading-relaxed text-[#5B564D]">
             {currentUser
               ? `Your account (${getRoleDisplayLabel(currentUser.role)}) does not have permission to open that workspace.`
               : 'You must sign in with an authorized account to view this page.'}
@@ -63,4 +63,3 @@ export function UnauthorizedPage({
     </section>
   )
 }
-

@@ -531,23 +531,25 @@ export function StudentPage({ currentUser }: StudentPageProps) {
   }
 
   return (
-    <section className="space-y-6 pb-20 lg:pb-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <section className="space-y-6 pb-20 lg:pb-6 ql-animate-enter">
+      <div className="flex flex-col gap-3.5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
-            <span className="h-2 w-2 rounded-full bg-emerald-600" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#BDD6C7] bg-[#E3EFE8] px-3 py-1 text-xs font-medium text-[#143B2B]">
+            <span className="h-2 w-2 rounded-full bg-[#1A4D38]" />
             <span>
               {currentUser
                 ? `Signed in as ${currentUser.full_name}${currentUser.student_roll_no ? ` (${currentUser.student_roll_no})` : ''} · Open for Pre-Orders`
                 : 'Main Campus Canteen · Open for Pre-Orders'}
             </span>
           </div>
-          <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
-            Freshly cooked, timed for pickup
+          <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-[#1E1D1A] sm:text-3xl">
+            {currentUser
+              ? `Welcome back, ${currentUser.full_name.split(' ')[0]}`
+              : 'Freshly cooked, timed for pickup'}
           </h1>
-          <p className="mt-1 text-sm text-stone-600">
-            Pre-order your meal and get a capacity-checked pickup window so you
-            skip the counter rush.
+          <p className="mt-1 text-sm text-[#5B564D]">
+            Pre-order your campus meal into a capacity-checked 5-minute pickup
+            slot — skip the counter rush.
           </p>
         </div>
 
@@ -744,13 +746,13 @@ export function StudentPage({ currentUser }: StudentPageProps) {
           <button
             type="button"
             onClick={scrollToCart}
-            className="flex w-full items-center justify-between rounded-2xl bg-emerald-800 px-4 py-3 text-white shadow-lg transition-colors hover:bg-emerald-900 cursor-pointer"
+            className="flex w-full items-center justify-between rounded-2xl bg-[#1A4D38] px-4 py-3 text-[#FCFBF8] shadow-lg transition-colors hover:bg-[#143B2B] cursor-pointer"
           >
-            <span className="inline-flex items-center gap-2 text-sm font-medium">
+            <span className="inline-flex items-center gap-2 text-sm font-medium tabular-nums">
               <ShoppingBag className="h-4 w-4" aria-hidden="true" />
               <span>
                 {cartTotals.itemCount}{' '}
-                {cartTotals.itemCount === 1 ? 'item' : 'items'} in cart
+                {cartTotals.itemCount === 1 ? 'item' : 'items'} in tray
               </span>
             </span>
             <span className="text-sm font-semibold">

@@ -316,21 +316,21 @@ export function StudentOrderHistory({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200/80 bg-stone-50/70 px-3 py-2 text-xs">
-                  <span className="inline-flex items-center gap-1.5 font-medium text-stone-800">
-                    <Clock className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
-                    <span>
-                      Pickup Window:{' '}
-                      {formatTimeWindow(
-                        order.pickup_slot_start,
-                        order.pickup_slot_end,
-                      )}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#D8D0C1] bg-[#F7F4ED] px-3.5 py-2.5 text-xs tabular-nums">
+                    <span className="inline-flex items-center gap-1.5 font-medium text-[#1E1D1A]">
+                      <Clock className="h-3.5 w-3.5 text-[#1A4D38]" aria-hidden="true" />
+                      <span>
+                        Pickup Window:{' '}
+                        {formatTimeWindow(
+                          order.pickup_slot_start,
+                          order.pickup_slot_end,
+                        )}
+                      </span>
                     </span>
-                  </span>
-                  <span className="font-semibold text-stone-900">
-                    Total: {formatRupees(order.total_amount)}
-                  </span>
-                </div>
+                    <span className="font-semibold text-[#1E1D1A]">
+                      Total: {formatRupees(order.total_amount)}
+                    </span>
+                  </div>
 
                 <ul className="space-y-1 text-sm text-stone-700">
                   {order.items.map((item) => (

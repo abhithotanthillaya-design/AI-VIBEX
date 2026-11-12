@@ -545,23 +545,23 @@ export function ManagerPage({ currentUser }: ManagerPageProps) {
   ]
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <section className="space-y-6 ql-animate-enter">
+      <div className="flex flex-col gap-3.5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#BDD6C7] bg-[#E3EFE8] px-3 py-1 text-xs font-medium text-[#143B2B]">
+            <ShieldCheck className="h-3.5 w-3.5 text-[#1A4D38]" aria-hidden="true" />
             <span>
               {currentUser
                 ? `Authenticated Manager · ${currentUser.full_name}`
                 : 'Authenticated Manager Console'}
             </span>
           </div>
-          <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
+          <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-[#1E1D1A] sm:text-3xl">
             Manager Operations &amp; Menu Console
           </h1>
-          <p className="mt-1 text-sm text-stone-600">
-            Manage menu availability, track finalized sales, inspect all
-            orders, and control pickup-slot capacity.
+          <p className="mt-1 text-sm text-[#5B564D]">
+            Manage menu availability, finalized sales, pickup-slot capacity, and
+            staff access.
           </p>
         </div>
 
@@ -578,7 +578,7 @@ export function ManagerPage({ currentUser }: ManagerPageProps) {
 
       <nav
         aria-label="Manager dashboard sections"
-        className="flex flex-wrap gap-2 border-b border-stone-200/80 pb-3"
+        className="flex flex-wrap gap-2 border-b border-[#E4DED2] pb-3.5"
       >
         {tabs.map((tab) => {
           const Icon = tab.icon
@@ -588,10 +588,10 @@ export function ManagerPage({ currentUser }: ManagerPageProps) {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all duration-150 cursor-pointer ${
                 selected
-                  ? 'border-emerald-700 bg-emerald-700 text-white shadow-xs'
-                  : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                  ? 'border-[#1A4D38] bg-[#1A4D38] text-[#FCFBF8] shadow-xs'
+                  : 'border-[#D8D0C1] bg-[#FCFBF8] text-[#5B564D] hover:bg-[#EFEAE0]/70 hover:text-[#1E1D1A]'
               }`}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
