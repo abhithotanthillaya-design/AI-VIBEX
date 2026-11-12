@@ -86,7 +86,7 @@ def init_db() -> None:
                 pickup_code TEXT NOT NULL UNIQUE,
                 customer_name TEXT NOT NULL,
                 status TEXT NOT NULL CHECK (
-                    status IN ('PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'COLLECTED')
+                    status IN ('PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'COLLECTED', 'CANCELLED')
                 ),
                 pickup_slot_start TEXT NOT NULL,
                 pickup_slot_end TEXT NOT NULL,

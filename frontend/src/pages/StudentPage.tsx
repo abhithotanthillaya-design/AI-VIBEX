@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
+  ClipboardList,
   RefreshCw,
   ShoppingBag,
   Sparkles,
   UtensilsCrossed,
 } from 'lucide-react'
-import { ApiClientError, fetchMenu } from '../api/client'
+import { ApiClientError, createOrder, fetchMenu } from '../api/client'
 import { CartPanel } from '../components/CartPanel'
 import { MenuCard } from '../components/MenuCard'
 import { MenuFilters } from '../components/MenuFilters'
+import { OrderConfirmationCard } from '../components/OrderConfirmationCard'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
-import type { CartItem, MenuItem } from '../types'
+import type { CartItem, CreateOrderResponse, MenuItem } from '../types'
 import {
   addItemToCart,
   calculateCartTotals,
@@ -21,8 +23,32 @@ import {
   updateCartItemQuantity,
 } from '../utils/cart'
 import { formatRupees } from '../utils/format'
+import { OrderTrackingPage } from './OrderTrackingPage'
 
 const CATEGORY_ORDER = ['Meals', 'Fast Food', 'Snacks', 'Beverages']
+const LAST_ORDER_STORAGE_KEY = 'queueless_last_order_id'
+
+type StudentSubView = 'menu' | 'tracking'
+
+function readStoredOrderId(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_ORDER_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeStoredOrderId(orderId: string | null): void {
+  try {
+    if (orderId) {
+      window.localStorage.setItem(LAST_ORDER_STORAGE_KEY, orderId)
+    } else {
+      window.localStorage.removeItem(LAST_ORDER_STORAGE_KEY)
+    }
+  } catch {
+    // Ignore storage quota / privacy mode failures.
+  }
+}
 
 function MenuGridSkeleton() {
   return (
@@ -47,13 +73,30 @@ function MenuGridSkeleton() {
   )
 }
 
+interface PlacedOrderSnapshot {
+  confirmation: CreateOrderResponse
+  items: CartItem[]
+  customerName: string
+}
+
 export function StudentPage() {
+  const [subView, setSubView] = useState<StudentSubView>('menu')
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [isLoadingMenu, setIsLoadingMenu] = useState<boolean>(true)
   const [menuError, setMenuError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
   const [cart, setCart] = useState<CartItem[]>([])
+
+  const [customerName, setCustomerName] = useState<string>('')
+  const [notes, setNotes] = useState<string>('')
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [placedOrder, setPlacedOrder] = useState<PlacedOrderSnapshot | null>(null)
+  const [trackedOrderId, setTrackedOrderId] = useState<string | null>(() =>
+    readStoredOrderId(),
+  )
+  const submittingGuardRef = useRef<boolean>(false)
 
   const loadMenu = useCallback(async () => {
     setIsLoadingMenu(true)
@@ -140,18 +183,22 @@ export function StudentPage() {
   const cartTotals = useMemo(() => calculateCartTotals(cart), [cart])
 
   const handleAddToCart = useCallback((item: MenuItem) => {
+    setSubmitError(null)
     setCart((prev) => addItemToCart(prev, item))
   }, [])
 
   const handleUpdateQuantity = useCallback((itemId: string, delta: number) => {
+    setSubmitError(null)
     setCart((prev) => updateCartItemQuantity(prev, itemId, delta))
   }, [])
 
   const handleRemoveItem = useCallback((itemId: string) => {
+    setSubmitError(null)
     setCart((prev) => removeItemFromCart(prev, itemId))
   }, [])
 
   const handleClearCart = useCallback(() => {
+    setSubmitError(null)
     setCart([])
   }, [])
 
@@ -160,11 +207,91 @@ export function StudentPage() {
     setSelectedCategory('All')
   }, [])
 
+  const handleOrderIdPersist = useCallback((orderId: string | null) => {
+    setTrackedOrderId(orderId)
+    writeStoredOrderId(orderId)
+  }, [])
+
+  const handlePlaceOrder = useCallback(async () => {
+    if (submittingGuardRef.current || cart.length === 0) {
+      return
+    }
+
+    const trimmedName = customerName.trim()
+    if (!trimmedName) {
+      setSubmitError('Please enter your name before placing the order.')
+      return
+    }
+
+    submittingGuardRef.current = true
+    setIsSubmittingOrder(true)
+    setSubmitError(null)
+
+    const cartSnapshot = cart.map((entry) => ({ ...entry }))
+    const trimmedNotes = notes.trim()
+
+    try {
+      const confirmation = await createOrder({
+        customer_name: trimmedName,
+        items: cartSnapshot.map((entry) => ({
+          menu_item_id: entry.item.id,
+          quantity: entry.quantity,
+        })),
+        ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+      })
+
+      // Clear cart only after backend confirms successful order creation.
+      setCart([])
+      setNotes('')
+      setPlacedOrder({
+        confirmation,
+        items: cartSnapshot,
+        customerName: trimmedName,
+      })
+      handleOrderIdPersist(confirmation.id)
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        setSubmitError(error.message)
+      } else {
+        setSubmitError(
+          'Unable to place order right now. Please check your connection and try again.',
+        )
+      }
+    } finally {
+      submittingGuardRef.current = false
+      setIsSubmittingOrder(false)
+    }
+  }, [cart, customerName, notes, handleOrderIdPersist])
+
+  const handleOpenTracking = useCallback(
+    (orderId: string) => {
+      handleOrderIdPersist(orderId)
+      setSubView('tracking')
+    },
+    [handleOrderIdPersist],
+  )
+
+  const handleStartNewOrder = useCallback(() => {
+    setPlacedOrder(null)
+    setSubView('menu')
+  }, [])
+
   const scrollToCart = useCallback(() => {
     document
       .getElementById('cart-panel')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
+
+  if (subView === 'tracking') {
+    return (
+      <OrderTrackingPage
+        key={trackedOrderId ?? 'lookup'}
+        initialOrderId={trackedOrderId}
+        onOrderIdChange={handleOrderIdPersist}
+        onBackToMenu={() => setSubView('menu')}
+      />
+    )
+  }
 
   return (
     <section className="space-y-6 pb-20 lg:pb-6">
@@ -178,118 +305,152 @@ export function StudentPage() {
             Freshly cooked, timed for pickup
           </h1>
           <p className="mt-1 text-sm text-stone-600">
-            Browse today&apos;s available dishes, check prep times, and build
-            your canteen tray without waiting in line.
+            Pre-order your meal and get a capacity-checked pickup window so you
+            skip the counter rush.
           </p>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={isLoadingMenu}
-          onClick={() => {
-            void loadMenu()
-          }}
-          icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
-        >
-          Refresh Menu
-        </Button>
-      </div>
-
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-5">
-          <MenuFilters
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            categories={categories}
-            selectedCategory={selectedCategory}
-            onCategoryChange={setSelectedCategory}
-            categoryCounts={categoryCounts}
-            totalCount={menuItems.length}
-          />
-
-          {isLoadingMenu ? (
-            <MenuGridSkeleton />
-          ) : menuError ? (
-            <Card className="border-rose-200 bg-rose-50/50 p-6">
-              <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-                    <AlertCircle className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-stone-900">
-                      Couldn&apos;t load the menu
-                    </h2>
-                    <p className="mt-1 text-sm text-stone-600">{menuError}</p>
-                  </div>
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    void loadMenu()
-                  }}
-                >
-                  Retry
-                </Button>
-              </div>
-            </Card>
-          ) : menuItems.length === 0 ? (
-            <Card className="p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
-                <UtensilsCrossed className="h-6 w-6" aria-hidden="true" />
-              </div>
-              <h2 className="mt-3 text-base font-semibold text-stone-900">
-                No menu items available right now
-              </h2>
-              <p className="mt-1 text-sm text-stone-600">
-                Check back shortly or refresh to fetch updated canteen stock.
-              </p>
-            </Card>
-          ) : filteredItems.length === 0 ? (
-            <Card className="p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
-                <Sparkles className="h-6 w-6" aria-hidden="true" />
-              </div>
-              <h2 className="mt-3 text-base font-semibold text-stone-900">
-                No dishes match your filter
-              </h2>
-              <p className="mt-1 text-sm text-stone-600">
-                Try searching for another dish or reset your category filter.
-              </p>
-              <div className="mt-4">
-                <Button variant="secondary" size="sm" onClick={handleResetFilters}>
-                  Reset filters
-                </Button>
-              </div>
-            </Card>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredItems.map((item) => (
-                <MenuCard
-                  key={item.id}
-                  item={item}
-                  quantity={quantitiesByItemId[item.id] ?? 0}
-                  onAdd={handleAddToCart}
-                  onUpdateQuantity={handleUpdateQuantity}
-                />
-              ))}
-            </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSubView('tracking')}
+            icon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
+          >
+            {trackedOrderId ? 'Track Current Order' : 'Track Order'}
+          </Button>
+          {!placedOrder && (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={isLoadingMenu}
+              onClick={() => {
+                void loadMenu()
+              }}
+              icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
+            >
+              Refresh Menu
+            </Button>
           )}
         </div>
-
-        <aside className="lg:sticky lg:top-24">
-          <CartPanel
-            items={cart}
-            onUpdateQuantity={handleUpdateQuantity}
-            onRemoveItem={handleRemoveItem}
-            onClearCart={handleClearCart}
-          />
-        </aside>
       </div>
 
-      {cartTotals.itemCount > 0 && (
+      {placedOrder ? (
+        <OrderConfirmationCard
+          confirmation={placedOrder.confirmation}
+          orderedItems={placedOrder.items}
+          customerName={placedOrder.customerName}
+          onTrackOrder={handleOpenTracking}
+          onNewOrder={handleStartNewOrder}
+        />
+      ) : (
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-5">
+            <MenuFilters
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              categories={categories}
+              selectedCategory={selectedCategory}
+              onCategoryChange={setSelectedCategory}
+              categoryCounts={categoryCounts}
+              totalCount={menuItems.length}
+            />
+
+            {isLoadingMenu ? (
+              <MenuGridSkeleton />
+            ) : menuError ? (
+              <Card className="border-rose-200 bg-rose-50/50 p-6">
+                <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                      <AlertCircle className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-semibold text-stone-900">
+                        Couldn&apos;t load the menu
+                      </h2>
+                      <p className="mt-1 text-sm text-stone-600">{menuError}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      void loadMenu()
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              </Card>
+            ) : menuItems.length === 0 ? (
+              <Card className="p-8 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
+                  <UtensilsCrossed className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <h2 className="mt-3 text-base font-semibold text-stone-900">
+                  No menu items available right now
+                </h2>
+                <p className="mt-1 text-sm text-stone-600">
+                  Check back shortly or refresh to fetch updated canteen stock.
+                </p>
+              </Card>
+            ) : filteredItems.length === 0 ? (
+              <Card className="p-8 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100 text-stone-400">
+                  <Sparkles className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <h2 className="mt-3 text-base font-semibold text-stone-900">
+                  No dishes match your filter
+                </h2>
+                <p className="mt-1 text-sm text-stone-600">
+                  Try searching for another dish or reset your category filter.
+                </p>
+                <div className="mt-4">
+                  <Button variant="secondary" size="sm" onClick={handleResetFilters}>
+                    Reset filters
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {filteredItems.map((item) => (
+                  <MenuCard
+                    key={item.id}
+                    item={item}
+                    quantity={quantitiesByItemId[item.id] ?? 0}
+                    onAdd={handleAddToCart}
+                    onUpdateQuantity={handleUpdateQuantity}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <aside className="lg:sticky lg:top-24">
+            <CartPanel
+              items={cart}
+              customerName={customerName}
+              onCustomerNameChange={(value) => {
+                setSubmitError(null)
+                setCustomerName(value)
+              }}
+              notes={notes}
+              onNotesChange={setNotes}
+              isSubmitting={isSubmittingOrder}
+              submitError={submitError}
+              onUpdateQuantity={handleUpdateQuantity}
+              onRemoveItem={handleRemoveItem}
+              onClearCart={handleClearCart}
+              onPlaceOrder={() => {
+                void handlePlaceOrder()
+              }}
+            />
+          </aside>
+        </div>
+      )}
+
+      {!placedOrder && cartTotals.itemCount > 0 && (
         <div className="fixed inset-x-4 bottom-4 z-30 lg:hidden">
           <button
             type="button"
@@ -304,7 +465,7 @@ export function StudentPage() {
               </span>
             </span>
             <span className="text-sm font-semibold">
-              {formatRupees(cartTotals.totalPaise)} · View Cart
+              {formatRupees(cartTotals.totalPaise)} · Checkout
             </span>
           </button>
         </div>

@@ -5,6 +5,7 @@ import {
   Clock,
   PackageCheck,
   Sparkles,
+  XCircle,
 } from 'lucide-react'
 import type { OrderStatus } from '../../types'
 
@@ -40,6 +41,11 @@ const ORDER_STATUS_STYLES: Record<OrderStatus, StatusStyle> = {
     classes: 'bg-stone-100 text-stone-600 border-stone-200',
     icon: <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />,
   },
+  CANCELLED: {
+    label: 'Cancelled',
+    classes: 'bg-rose-50 text-rose-800 border-rose-200',
+    icon: <XCircle className="h-3.5 w-3.5" aria-hidden="true" />,
+  },
 }
 
 interface StatusBadgeProps {
@@ -57,4 +63,3 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     </span>
   )
 }
-

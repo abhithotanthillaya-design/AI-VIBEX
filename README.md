@@ -61,4 +61,5 @@ Open `http://localhost:5173` in your browser.
 
 - **Phase 1 (Foundation):** Complete — project structure, environment templates, SQLite schema setup, FastAPI `/api/health` + CORS, React + Tailwind + Lucide design system shell, and verified startup.
 - **Phase 2 (Student Menu & Shopping Cart):** Complete — idempotent seeded Indian canteen menu (`backend/app/seed.py`), `GET /api/menu` endpoint, responsive student menu cards with local food images, live search, category filters, and interactive shopping cart panel.
-- **Upcoming Phases:** Order placement & capacity-aware slot allocation (Phase 3), kitchen live dashboard & polling (Phase 4), demo reset & end-to-end QA (Phase 5).
+- **Phase 3 (Order Placement, Slot Allocation & Student Tracking):** Complete — deterministic capacity-aware pickup-slot scheduler (`backend/app/allocator.py`), `POST /api/orders` & `GET /api/orders/{order_id}`, student checkout confirmation with pickup code & slot window, and live polling order tracker.
+- **Upcoming Phases:** Kitchen live dashboard & status controls (Phase 4), demo reset & end-to-end QA (Phase 5).

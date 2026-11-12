@@ -4,6 +4,7 @@ export type OrderStatus =
   | 'PREPARING'
   | 'READY'
   | 'COLLECTED'
+  | 'CANCELLED'
 
 export interface HealthResponse {
   status: string

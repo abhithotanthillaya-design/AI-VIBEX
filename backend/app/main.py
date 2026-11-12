@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import sqlite3
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.routes.health import router as health_router
 from app.routes.menu import router as menu_router
+from app.routes.orders import router as orders_router
 from app.seed import seed_menu_items
 
 
@@ -41,12 +42,30 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @application.exception_handler(HTTPException)
+    async def http_exception_handler(
+        _request: Request, exc: HTTPException
+    ) -> JSONResponse:
+        if isinstance(exc.detail, dict):
+            error_code = str(exc.detail.get("error", "request_error"))
+            message = str(exc.detail.get("message", "Request could not be completed."))
+        else:
+            error_code = "request_error"
+            message = str(exc.detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": error_code,
+                "message": message,
+            },
+        )
+
     @application.exception_handler(RequestValidationError)
     async def validation_exception_handler(
         _request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "validation_error",
                 "message": "Invalid request payload or parameters.",
@@ -68,6 +87,7 @@ def create_app() -> FastAPI:
 
     application.include_router(health_router, prefix="/api")
     application.include_router(menu_router, prefix="/api")
+    application.include_router(orders_router, prefix="/api")
     return application
 
 

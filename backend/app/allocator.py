@@ -1,0 +1,162 @@
+"""Deterministic, capacity-aware pickup-slot allocation algorithm."""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import math
+import sqlite3
+
+from app.config import Settings
+
+ACTIVE_WORKLOAD_STATUSES = ("PLACED", "ACCEPTED", "PREPARING", "READY")
+MAX_EXTENSION_SLOTS = 24  # Up to 2 hours ahead at 5-minute intervals
+
+
+class CapacityAllocationError(Exception):
+    """Raised when an order cannot be safely assigned to any pickup slot."""
+
+    def __init__(self, message: str, status_code: int = 400, code: str = "capacity_error") -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.code = code
+
+
+@dataclass(frozen=True)
+class SlotAllocation:
+    """Result of assigning an order to a capacity-checked pickup window."""
+
+    slot_start: datetime
+    slot_end: datetime
+    prior_workload: int
+    new_workload: int
+    slot_capacity: int
+    dedicated_slot: bool
+
+
+def align_to_slot_start(reference_time: datetime, slot_duration_minutes: int) -> datetime:
+    """Round a timezone-aware datetime up to the nearest pickup-slot grid boundary."""
+    if slot_duration_minutes <= 0:
+        raise ValueError("slot_duration_minutes must be positive.")
+
+    minute_floor = reference_time.replace(second=0, microsecond=0)
+    seconds_past_minute = reference_time.second + (reference_time.microsecond / 1_000_000)
+
+    remainder_minutes = minute_floor.minute % slot_duration_minutes
+    if remainder_minutes == 0 and seconds_past_minute == 0:
+        return minute_floor
+
+    minutes_to_next = slot_duration_minutes - remainder_minutes
+    return minute_floor + timedelta(minutes=minutes_to_next)
+
+
+def get_active_slot_workloads(
+    conn: sqlite3.Connection,
+    earliest_slot_start: datetime,
+) -> dict[datetime, tuple[int, int]]:
+    """Aggregate active preparation units and active order counts by slot start.
+
+    Excludes COLLECTED and CANCELLED orders so completed or cancelled orders
+    never consume current kitchen capacity.
+    """
+    rows = conn.execute(
+        """
+        SELECT pickup_slot_start, total_prep_units
+        FROM orders
+        WHERE status NOT IN ('COLLECTED', 'CANCELLED')
+        """
+    ).fetchall()
+
+    workloads: dict[datetime, tuple[int, int]] = {}
+    for row in rows:
+        slot_start = datetime.fromisoformat(str(row["pickup_slot_start"]))
+        if slot_start < earliest_slot_start:
+            continue
+        prev_units, prev_count = workloads.get(slot_start, (0, 0))
+        workloads[slot_start] = (
+            prev_units + int(row["total_prep_units"]),
+            prev_count + 1,
+        )
+    return workloads
+
+
+def allocate_pickup_slot(
+    conn: sqlite3.Connection,
+    order_workload: int,
+    settings: Settings,
+    *,
+    reference_time: datetime | None = None,
+) -> SlotAllocation:
+    """Assign the earliest feasible pickup slot within kitchen capacity.
+
+    Rules:
+    1. Divide upcoming time into `slot_duration_minutes` (default 5-minute) slots.
+    2. Standard orders (`order_workload <= slot_capacity_units`) take the earliest
+       slot where `current_workload + order_workload <= slot_capacity_units`.
+    3. Orders exceeding a single slot's standard capacity (up to 3x slot capacity)
+       are never combined with other orders: they require an empty slot
+       (`current_workload == 0`) so they cannot overbook an active window.
+    4. Orders exceeding the maximum single-order batch cap (3x slot capacity)
+       are rejected cleanly with instructions to split the order.
+    """
+    if order_workload <= 0:
+        raise CapacityAllocationError(
+            "Order workload must be greater than zero.",
+            status_code=400,
+            code="invalid_workload",
+        )
+
+    slot_duration = settings.slot_duration_minutes
+    slot_capacity = settings.slot_capacity_units
+    max_single_order_units = slot_capacity * 3
+
+    if order_workload > max_single_order_units:
+        raise CapacityAllocationError(
+            (
+                f"Order preparation load ({order_workload} units) exceeds the maximum "
+                f"single-order limit ({max_single_order_units} units). "
+                "Please split this into smaller orders."
+            ),
+            status_code=400,
+            code="order_too_large",
+        )
+
+    now = reference_time or datetime.now(settings.zone_info)
+    first_slot_start = align_to_slot_start(now, slot_duration)
+    active_workloads = get_active_slot_workloads(conn, first_slot_start)
+
+    base_slot_count = max(1, math.ceil(settings.slot_lookahead_minutes / slot_duration))
+    total_candidate_slots = max(base_slot_count, MAX_EXTENSION_SLOTS)
+    requires_dedicated_slot = order_workload > slot_capacity
+
+    for index in range(total_candidate_slots):
+        candidate_start = first_slot_start + timedelta(minutes=index * slot_duration)
+        candidate_end = candidate_start + timedelta(minutes=slot_duration)
+        prior_units, _ = active_workloads.get(candidate_start, (0, 0))
+
+        if requires_dedicated_slot:
+            # Dedicated oversized batch requires a completely empty slot.
+            if prior_units == 0:
+                return SlotAllocation(
+                    slot_start=candidate_start,
+                    slot_end=candidate_end,
+                    prior_workload=0,
+                    new_workload=order_workload,
+                    slot_capacity=slot_capacity,
+                    dedicated_slot=True,
+                )
+        elif prior_units + order_workload <= slot_capacity:
+            return SlotAllocation(
+                slot_start=candidate_start,
+                slot_end=candidate_end,
+                prior_workload=prior_units,
+                new_workload=prior_units + order_workload,
+                slot_capacity=slot_capacity,
+                dedicated_slot=False,
+            )
+
+    raise CapacityAllocationError(
+        "All pickup windows for the next two hours are at full kitchen capacity. Please try again shortly.",
+        status_code=409,
+        code="kitchen_full",
+    )
+

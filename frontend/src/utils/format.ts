@@ -13,3 +13,32 @@ export function formatRupees(paise: number): string {
   }).format(rupees)
 }
 
+export function formatSlotTime(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp)
+  if (Number.isNaN(parsed.getTime())) {
+    return isoTimestamp
+  }
+  return new Intl.DateTimeFormat('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(parsed)
+}
+
+export function formatTimeWindow(startIso: string, endIso: string): string {
+  return `${formatSlotTime(startIso)} – ${formatSlotTime(endIso)}`
+}
+
+export function formatShortDateTime(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp)
+  if (Number.isNaN(parsed.getTime())) {
+    return isoTimestamp
+  }
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(parsed)
+}

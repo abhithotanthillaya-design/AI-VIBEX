@@ -1,23 +1,47 @@
-import { Clock, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, Clock, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import type { FormEvent } from 'react'
 import type { CartItem } from '../types'
 import { calculateCartTotals } from '../utils/cart'
 import { formatRupees } from '../utils/format'
+import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 
 interface CartPanelProps {
   items: CartItem[]
+  customerName: string
+  onCustomerNameChange: (value: string) => void
+  notes: string
+  onNotesChange: (value: string) => void
+  isSubmitting: boolean
+  submitError: string | null
   onUpdateQuantity: (itemId: string, delta: number) => void
   onRemoveItem: (itemId: string) => void
   onClearCart: () => void
+  onPlaceOrder: () => void
 }
 
 export function CartPanel({
   items,
+  customerName,
+  onCustomerNameChange,
+  notes,
+  onNotesChange,
+  isSubmitting,
+  submitError,
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
+  onPlaceOrder,
 }: CartPanelProps) {
   const totals = calculateCartTotals(items)
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isSubmitting || items.length === 0) {
+      return
+    }
+    onPlaceOrder()
+  }
 
   return (
     <Card id="cart-panel" className="flex flex-col overflow-hidden">
@@ -39,8 +63,9 @@ export function CartPanel({
         {items.length > 0 && (
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={onClearCart}
-            className="rounded-lg px-2.5 py-1 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 cursor-pointer"
+            className="rounded-lg px-2.5 py-1 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:opacity-50 cursor-pointer"
           >
             Clear all
           </button>
@@ -56,13 +81,13 @@ export function CartPanel({
             Your canteen tray is empty
           </p>
           <p className="mt-1 max-w-[230px] text-xs leading-relaxed text-stone-500">
-            Select dishes from the menu to build your order and preview your
-            total and prep workload.
+            Select dishes from the menu to place a pre-order and receive an
+            assigned pickup window.
           </p>
         </div>
       ) : (
-        <>
-          <ul className="max-h-[360px] divide-y divide-stone-100 overflow-y-auto px-5">
+        <form onSubmit={handleSubmit}>
+          <ul className="max-h-[280px] divide-y divide-stone-100 overflow-y-auto px-5">
             {items.map(({ item, quantity }) => (
               <li key={item.id} className="flex items-start justify-between gap-3 py-3.5">
                 <div className="min-w-0 flex-1">
@@ -81,9 +106,10 @@ export function CartPanel({
                     >
                       <button
                         type="button"
+                        disabled={isSubmitting}
                         onClick={() => onUpdateQuantity(item.id, -1)}
                         aria-label={`Decrease cart quantity of ${item.name}`}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-stone-700 hover:bg-white cursor-pointer"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-stone-700 hover:bg-white disabled:opacity-50 cursor-pointer"
                       >
                         <Minus className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -92,9 +118,10 @@ export function CartPanel({
                       </span>
                       <button
                         type="button"
+                        disabled={isSubmitting}
                         onClick={() => onUpdateQuantity(item.id, 1)}
                         aria-label={`Increase cart quantity of ${item.name}`}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-stone-700 hover:bg-white cursor-pointer"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-stone-700 hover:bg-white disabled:opacity-50 cursor-pointer"
                       >
                         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -102,9 +129,10 @@ export function CartPanel({
 
                     <button
                       type="button"
+                      disabled={isSubmitting}
                       onClick={() => onRemoveItem(item.id)}
                       aria-label={`Remove ${item.name} from cart`}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
@@ -118,8 +146,49 @@ export function CartPanel({
             ))}
           </ul>
 
-          <div className="border-t border-stone-200/80 bg-stone-50/70 px-5 py-4 space-y-3">
-            <div className="space-y-1.5 text-sm">
+          <div className="space-y-4 border-t border-stone-200/80 bg-stone-50/70 px-5 py-4">
+            <div className="space-y-3">
+              <div>
+                <label
+                  htmlFor="customer-name"
+                  className="block text-xs font-medium text-stone-700"
+                >
+                  Student Name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  id="customer-name"
+                  type="text"
+                  value={customerName}
+                  disabled={isSubmitting}
+                  onChange={(event) => onCustomerNameChange(event.target.value)}
+                  placeholder="e.g. Aarav Sharma"
+                  maxLength={80}
+                  required
+                  className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none disabled:bg-stone-100"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="order-notes"
+                  className="block text-xs font-medium text-stone-700"
+                >
+                  Preparation Notes (optional)
+                </label>
+                <textarea
+                  id="order-notes"
+                  rows={2}
+                  value={notes}
+                  disabled={isSubmitting}
+                  onChange={(event) => onNotesChange(event.target.value)}
+                  placeholder="e.g. Less spicy, pack chutney separately"
+                  maxLength={300}
+                  className="mt-1 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none disabled:bg-stone-100"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 border-t border-stone-200/80 pt-3 text-sm">
               <div className="flex items-center justify-between text-stone-600">
                 <span>Subtotal ({totals.itemCount} items)</span>
                 <span>{formatRupees(totals.subtotalPaise)}</span>
@@ -139,14 +208,35 @@ export function CartPanel({
               </div>
             </div>
 
-            <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-3.5 py-2.5 text-xs leading-relaxed text-emerald-900">
-              Checkout and capacity-aware pickup slot allocation connect here in
-              Phase 3.
-            </div>
+            {submitError && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              loading={isSubmitting}
+              disabled={items.length === 0 || isSubmitting}
+              className="w-full"
+              icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
+            >
+              {isSubmitting ? 'Assigning Pickup Slot...' : 'Place Order'}
+            </Button>
+
+            <p className="text-center text-[11px] leading-relaxed text-stone-500">
+              Demo pre-order mode · Prices are verified on the server and
+              assigned to the earliest open 5-minute pickup slot.
+            </p>
           </div>
-        </>
+        </form>
       )}
     </Card>
   )
 }
-

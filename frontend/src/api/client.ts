@@ -1,4 +1,11 @@
-import type { ApiErrorBody, HealthResponse, MenuItem } from '../types'
+import type {
+  ApiErrorBody,
+  CreateOrderRequest,
+  CreateOrderResponse,
+  HealthResponse,
+  MenuItem,
+  OrderDetail,
+} from '../types'
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '')
@@ -72,5 +79,23 @@ export function fetchMenu(params?: MenuQueryParams): Promise<MenuItem[]> {
   return apiRequest<MenuItem[]>(`/api/menu${query ? `?${query}` : ''}`, {
     method: 'GET',
   })
+}
+
+export function createOrder(
+  payload: CreateOrderRequest,
+): Promise<CreateOrderResponse> {
+  return apiRequest<CreateOrderResponse>('/api/orders', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function fetchOrder(orderId: string): Promise<OrderDetail> {
+  return apiRequest<OrderDetail>(
+    `/api/orders/${encodeURIComponent(orderId.trim())}`,
+    {
+      method: 'GET',
+    },
+  )
 }
 

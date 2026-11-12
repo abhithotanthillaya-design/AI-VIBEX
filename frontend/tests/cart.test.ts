@@ -8,7 +8,7 @@ import {
   removeItemFromCart,
   updateCartItemQuantity,
 } from '../src/utils/cart.ts'
-import { formatRupees } from '../src/utils/format.ts'
+import { formatRupees, formatSlotTime, formatTimeWindow } from '../src/utils/format.ts'
 
 const SANDWICH: MenuItem = {
   id: 'item_1',
@@ -85,5 +85,15 @@ test('formatRupees formats whole and fractional paise cleanly', () => {
   assert.equal(formatRupees(5000), '₹50')
   assert.equal(formatRupees(5050), '₹50.50')
   assert.equal(formatRupees(0), '₹0')
+})
+
+test('formatSlotTime and formatTimeWindow format pickup windows safely', () => {
+  const start = '2026-11-12T12:50:00+05:30'
+  const end = '2026-11-12T12:55:00+05:30'
+  const slotText = formatSlotTime(start)
+  const windowText = formatTimeWindow(start, end)
+  assert.ok(slotText.includes('12:50'))
+  assert.ok(windowText.includes('–'))
+  assert.equal(formatSlotTime('invalid-date'), 'invalid-date')
 })
 
