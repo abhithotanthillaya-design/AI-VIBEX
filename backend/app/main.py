@@ -1,0 +1,71 @@
+"""FastAPI application entry point for QUEUELESS."""
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+import sqlite3
+
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.config import get_settings
+from app.database import init_db
+from app.routes.health import router as health_router
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Initialize database schema when the API service starts."""
+    init_db()
+    yield
+
+
+def create_app() -> FastAPI:
+    """Build and configure the FastAPI application instance."""
+    settings = get_settings()
+    application = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={
+                "error": "validation_error",
+                "message": "Invalid request payload or parameters.",
+                "details": exc.errors(),
+            },
+        )
+
+    @application.exception_handler(sqlite3.Error)
+    async def sqlite_exception_handler(
+        _request: Request, _exc: sqlite3.Error
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": "database_error",
+                "message": "A database error occurred while processing the request.",
+            },
+        )
+
+    application.include_router(health_router, prefix="/api")
+    return application
+
+
+app = create_app()
+
