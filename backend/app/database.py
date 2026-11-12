@@ -79,6 +79,9 @@ def init_db() -> None:
                 prep_minutes INTEGER NOT NULL CHECK (prep_minutes > 0),
                 available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0, 1)),
                 is_veg INTEGER NOT NULL DEFAULT 1 CHECK (is_veg IN (0, 1)),
+                is_vegan INTEGER NOT NULL DEFAULT 0 CHECK (is_vegan IN (0, 1)),
+                is_jain INTEGER NOT NULL DEFAULT 0 CHECK (is_jain IN (0, 1)),
+                allergen_info TEXT,
                 is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
                 image_url TEXT
             );
@@ -107,6 +110,11 @@ def init_db() -> None:
                 total_amount INTEGER NOT NULL CHECK (total_amount >= 0),
                 total_prep_units INTEGER NOT NULL CHECK (total_prep_units > 0),
                 notes TEXT,
+                payment_method TEXT NOT NULL DEFAULT 'COUNTER_CASH',
+                payment_status TEXT NOT NULL DEFAULT 'PAY_AT_COUNTER',
+                payment_reference TEXT,
+                pickup_token_hash TEXT,
+                pickup_token_used_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -141,10 +149,50 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE menu_items ADD COLUMN is_veg INTEGER NOT NULL DEFAULT 1;"
             )
+        if "is_vegan" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE menu_items ADD COLUMN is_vegan INTEGER NOT NULL DEFAULT 0;"
+            )
+        if "is_jain" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE menu_items ADD COLUMN is_jain INTEGER NOT NULL DEFAULT 0;"
+            )
+        if "allergen_info" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE menu_items ADD COLUMN allergen_info TEXT;"
+            )
         if "is_deleted" not in existing_cols:
             conn.execute(
                 "ALTER TABLE menu_items ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;"
             )
+
+        existing_order_cols = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(orders);").fetchall()
+        }
+        if "payment_method" not in existing_order_cols:
+            conn.execute(
+                "ALTER TABLE orders ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'COUNTER_CASH';"
+            )
+        if "payment_status" not in existing_order_cols:
+            conn.execute(
+                "ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'PAY_AT_COUNTER';"
+            )
+        if "payment_reference" not in existing_order_cols:
+            conn.execute(
+                "ALTER TABLE orders ADD COLUMN payment_reference TEXT;"
+            )
+        if "pickup_token_hash" not in existing_order_cols:
+            conn.execute(
+                "ALTER TABLE orders ADD COLUMN pickup_token_hash TEXT;"
+            )
+        if "pickup_token_used_at" not in existing_order_cols:
+            conn.execute(
+                "ALTER TABLE orders ADD COLUMN pickup_token_used_at TEXT;"
+            )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_pickup_token_hash ON orders(pickup_token_hash);"
+        )
 
 
 def check_db_health() -> bool:

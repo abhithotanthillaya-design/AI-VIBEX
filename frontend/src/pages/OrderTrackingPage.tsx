@@ -8,7 +8,9 @@ import {
   Ticket,
 } from 'lucide-react'
 import { ApiClientError, fetchOrder } from '../api/client'
+import { DemoPaymentPanel } from '../components/DemoPaymentPanel'
 import { OrderTimeline } from '../components/OrderTimeline'
+import { PickupQrCard } from '../components/PickupQrCard'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { StatusBadge } from '../components/ui/StatusBadge'
@@ -18,6 +20,10 @@ import {
   formatShortDateTime,
   formatTimeWindow,
 } from '../utils/format'
+import {
+  readStoredPickupToken,
+  recordStoredOrderHistory,
+} from '../utils/storage'
 
 const POLL_INTERVAL_MS = 4000
 
@@ -41,6 +47,9 @@ export function OrderTrackingPage({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+  const [storedToken, setStoredToken] = useState<string | null>(() =>
+    initialOrderId ? readStoredPickupToken(initialOrderId) : null,
+  )
   const inFlightRef = useRef<boolean>(false)
 
   const loadOrder = useCallback(async (orderId: string, background = false) => {
@@ -58,6 +67,7 @@ export function OrderTrackingPage({
 
     try {
       const detail = await fetchOrder(orderId)
+      recordStoredOrderHistory(detail.id)
       setOrder(detail)
       setError(null)
       setLastSyncedAt(
@@ -94,6 +104,7 @@ export function OrderTrackingPage({
     fetchOrder(trackedOrderId)
       .then((detail) => {
         if (!active) return
+        recordStoredOrderHistory(detail.id)
         setOrder(detail)
         setError(null)
         setLastSyncedAt(
@@ -152,6 +163,7 @@ export function OrderTrackingPage({
     setOrder(null)
     setIsLoading(true)
     setTrackedOrderId(cleaned)
+    setStoredToken(readStoredPickupToken(cleaned))
     onOrderIdChange(cleaned)
   }
 
@@ -355,6 +367,26 @@ export function OrderTrackingPage({
                 </div>
               </div>
 
+              <PickupQrCard
+                token={storedToken}
+                pickupCode={order.pickup_code}
+                orderId={order.id}
+                orderStatus={order.status}
+                onRetryToken={() => {
+                  setStoredToken(readStoredPickupToken(order.id))
+                }}
+              />
+
+              <DemoPaymentPanel
+                orderId={order.id}
+                amountPaise={order.total_amount}
+                orderStatus={order.status}
+                paymentMethod={order.payment_method}
+                paymentStatus={order.payment_status}
+                paymentReference={order.payment_reference}
+                onPaymentUpdated={(updated) => setOrder(updated)}
+              />
+
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-stone-900">
                   Preparation Progress
@@ -398,8 +430,8 @@ export function OrderTrackingPage({
                 </ul>
 
                 {order.notes && (
-                  <div className="mx-5 mb-4 rounded-xl border border-stone-200/80 bg-stone-50 px-3.5 py-2.5 text-xs text-stone-700">
-                    <span className="font-semibold text-stone-900">Notes: </span>
+                  <div className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2.5 text-xs text-amber-950">
+                    <span className="font-semibold">Special Instructions: </span>
                     {order.notes}
                   </div>
                 )}

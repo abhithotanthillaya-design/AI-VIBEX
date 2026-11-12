@@ -10,8 +10,8 @@ Campus canteens experience intense, short-duration demand spikes between lecture
 
 **QUEUELESS** is a dual-interface web application for campus pre-ordering and kitchen queue orchestration:
 
-- **Student Interface:** Fast mobile-friendly menu browsing with Veg/Non-Veg indicators, cart management, server-validated checkout, pickup-code issuance, and live status tracking.
-- **Kitchen Interface:** Slot-grouped live order queue, preparation notes visibility, sequential status controls, pickup-slot workload meters, and demo reset control.
+- **Student Interface:** Fast mobile-friendly menu browsing with Veg/Non-Veg, Vegan, Jain-Friendly, and manager-verified allergen disclosure, **"Order in your own words"** plain-language input with confirmation preview, chronological **Pickup Window** selector (`Available`, `Limited availability`, `Full`, `Closed`), cart & special instruction requests, simulated Demo UPI / Counter Cash flow, pickup-code & cryptographic QR issuance, live status tracking, and browser-local **Order History**.
+- **Kitchen Interface:** Slot-grouped live order queue, preparation notes visibility, sequential status controls, camera/manual QR pickup verification (`POST /api/kitchen/verify-pickup`), pickup-slot workload meters, and demo reset control.
 - **Manager Interface (Demo Prototype Access):** Real-time operational KPIs in IST, full menu CRUD with snapshot-safe soft deletion, searchable order oversight, collected-only 7-day sales summary, and DB-backed slot capacity/closure controls.
 
 ---
@@ -46,10 +46,12 @@ Rather than acting as a plain online order form, QUEUELESS enforces **capacity-a
 ## 6. Current Limitations
 
 - Prototype operates in **demo mode** without real payment processing, institutional SSO authentication, or SMS/WhatsApp push notifications.
-- Manager endpoints (`/api/manager/*`) and the Manager console are intentionally open for hackathon demonstration (**Demo Prototype Access**) and require authentication + role-based authorization before production deployment.
+- Kitchen (`/api/kitchen/*`) and Manager (`/api/manager/*`) routes are intentionally open for hackathon demonstration (**Demo Prototype Access**) and require authentication + role-based authorization before production deployment.
+- Camera-based QR scanning uses `getUserMedia`, which requires **HTTPS** outside `localhost`/`127.0.0.1`; manual token entry and manual counter pickup codes remain available as fallbacks.
 - Preparation unit weights (`prep_minutes`) and default slot capacity (`12` units, configurable via Manager Slot Settings) are prototype values rather than calibrated against historical kitchen throughput.
 - Single-canteen scope; multi-counter kitchen routing is not modeled.
 - Demo reset (`POST /api/demo/reset`) is intended strictly for non-production hackathon demonstrations.
+- **Plain-language ordering** uses a deterministic local parser matched against the live SQLite menu rather than a cloud LLM; unrecognized phrasing is flagged for confirmation/manual selection, and valid extracted pickup times preselect a matching 5-minute checkout slot within the 2-hour bookable window (`MAX_EXTENSION_SLOTS = 24`) subject to atomic server re-validation at checkout.
 
 ---
 

@@ -4,10 +4,17 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.allocator import CapacityAllocationError
 from app.config import get_settings
-from app.models import OrderValidationError, create_order, get_order_by_id
+from app.models import (
+    OrderValidationError,
+    create_order,
+    get_order_by_id,
+    process_demo_payment,
+)
 from app.schemas import (
     CreateOrderRequest,
     CreateOrderResponse,
+    DemoPaymentRequest,
+    DemoPaymentResponse,
     OrderDetailResponse,
 )
 
@@ -43,4 +50,19 @@ def get_order_status(order_id: str) -> OrderDetailResponse:
             },
         )
     return order
+
+
+@router.post("/orders/{order_id}/demo-payment", response_model=DemoPaymentResponse)
+def simulate_demo_payment(
+    order_id: str,
+    payload: DemoPaymentRequest,
+) -> DemoPaymentResponse:
+    """Process a simulated demo payment state transition (no real money is charged)."""
+    try:
+        return process_demo_payment(order_id, payload, get_settings())
+    except OrderValidationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"error": exc.code, "message": exc.message},
+        ) from exc
 

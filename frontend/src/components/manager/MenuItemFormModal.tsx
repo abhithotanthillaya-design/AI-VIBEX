@@ -29,6 +29,9 @@ function buildInitialValues(item: MenuItem | null) {
     prepMinutes: item ? String(item.prep_minutes) : '4',
     imageUrl: item?.image_url ?? '',
     isVeg: item?.is_veg ?? true,
+    isVegan: item?.is_vegan ?? false,
+    isJain: item?.is_jain ?? false,
+    allergenInfo: item?.allergen_info ?? '',
     available: item?.available ?? true,
   }
 }
@@ -49,6 +52,9 @@ export function MenuItemFormModal({
   const [prepMinutes, setPrepMinutes] = useState(initial.prepMinutes)
   const [imageUrl, setImageUrl] = useState(initial.imageUrl)
   const [isVeg, setIsVeg] = useState(initial.isVeg)
+  const [isVegan, setIsVegan] = useState(initial.isVegan)
+  const [isJain, setIsJain] = useState(initial.isJain)
+  const [allergenInfo, setAllergenInfo] = useState(initial.allergenInfo)
   const [available, setAvailable] = useState(initial.available)
   const [validationError, setValidationError] = useState<string | null>(null)
 
@@ -79,6 +85,9 @@ export function MenuItemFormModal({
       prepMinutes,
       imageUrl,
       isVeg,
+      isVegan,
+      isJain,
+      allergenInfo,
       available,
     })
 
@@ -306,7 +315,11 @@ export function MenuItemFormModal({
                 <button
                   type="button"
                   disabled={isSaving}
-                  onClick={() => setIsVeg(false)}
+                  onClick={() => {
+                    setIsVeg(false)
+                    setIsVegan(false)
+                    setIsJain(false)
+                  }}
                   className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                     !isVeg
                       ? 'bg-white text-rose-800 shadow-xs'
@@ -348,6 +361,61 @@ export function MenuItemFormModal({
                   Sold Out
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50/70 p-3.5">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-stone-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={isSaving || !isVeg}
+                  checked={isVegan}
+                  onChange={(event) => setIsVegan(event.target.checked)}
+                  className="h-4 w-4 rounded border-stone-300 text-emerald-700 focus:ring-emerald-600"
+                />
+                <span>Vegan</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-stone-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={isSaving || !isVeg}
+                  checked={isJain}
+                  onChange={(event) => setIsJain(event.target.checked)}
+                  className="h-4 w-4 rounded border-stone-300 text-emerald-700 focus:ring-emerald-600"
+                />
+                <span>Jain-Friendly</span>
+              </label>
+
+              {!isVeg && (
+                <span className="text-[11px] text-stone-500">
+                  Vegan &amp; Jain options require Vegetarian classification
+                </span>
+              )}
+            </div>
+
+            <div>
+              <label
+                htmlFor="menu-item-allergens"
+                className="block text-xs font-medium text-stone-700"
+              >
+                Allergen Information (optional)
+              </label>
+              <input
+                id="menu-item-allergens"
+                type="text"
+                disabled={isSaving}
+                value={allergenInfo}
+                onChange={(event) => setAllergenInfo(event.target.value)}
+                placeholder="e.g. Contains dairy, gluten, peanuts (leave blank if unverified)"
+                maxLength={200}
+                className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 focus:border-emerald-600 focus:outline-none"
+              />
+              <p className="mt-1 text-[11px] text-stone-500">
+                Only list confirmed allergens. Blank items display &ldquo;Not
+                listed — confirm at counter&rdquo; and never claim allergen-free.
+              </p>
             </div>
           </div>
 

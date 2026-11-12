@@ -1,5 +1,7 @@
 """Menu catalog endpoints."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Query
 
 from app.models import list_menu_items
@@ -22,6 +24,10 @@ def get_menu(
         max_length=100,
         description="Optional name or description search term",
     ),
+    dietary: Literal["veg", "non_veg", "vegan", "jain"] | None = Query(
+        default=None,
+        description="Optional dietary filter",
+    ),
     include_unavailable: bool = Query(
         default=False,
         description="Include unavailable items when true",
@@ -31,6 +37,7 @@ def get_menu(
     return list_menu_items(
         category=category,
         search=search,
+        dietary=dietary,
         include_unavailable=include_unavailable,
     )
 

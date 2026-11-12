@@ -73,3 +73,34 @@ export function getCartQuantityMap(cart: CartItem[]): Record<string, number> {
   return quantities
 }
 
+export function mergeParsedItemsIntoCart(
+  cart: CartItem[],
+  additions: { item: MenuItem; quantity: number }[],
+): CartItem[] {
+  let nextCart = [...cart]
+  for (const addition of additions) {
+    if (!addition.item.available || addition.quantity <= 0) {
+      continue
+    }
+    const existingIndex = nextCart.findIndex(
+      (entry) => entry.item.id === addition.item.id,
+    )
+    if (existingIndex >= 0) {
+      nextCart = nextCart.map((entry, idx) =>
+        idx === existingIndex
+          ? {
+              item: addition.item,
+              quantity: Math.min(50, entry.quantity + addition.quantity),
+            }
+          : entry,
+      )
+    } else {
+      nextCart.push({
+        item: addition.item,
+        quantity: Math.min(50, addition.quantity),
+      })
+    }
+  }
+  return nextCart
+}
+

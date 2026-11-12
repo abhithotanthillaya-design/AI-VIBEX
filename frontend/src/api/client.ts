@@ -1,8 +1,12 @@
 import type {
   ApiErrorBody,
+  AvailableSlotsResponse,
   CreateOrderRequest,
   CreateOrderResponse,
+  DemoPaymentRequest,
+  DemoPaymentResponse,
   DemoResetResponse,
+  DietaryFilter,
   HealthResponse,
   ManagerDashboard,
   ManagerSalesSummary,
@@ -10,10 +14,12 @@ import type {
   MenuItem,
   MenuItemDeleteResponse,
   MenuItemUpsertRequest,
+  NaturalOrderParseResponse,
   OrderDetail,
   OrderStatus,
   SlotClosureRequest,
   SlotWorkload,
+  VerifyPickupResponse,
 } from '../types'
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -74,6 +80,7 @@ export function fetchHealth(): Promise<HealthResponse> {
 export interface MenuQueryParams {
   category?: string
   search?: string
+  dietary?: DietaryFilter
 }
 
 export function fetchMenu(params?: MenuQueryParams): Promise<MenuItem[]> {
@@ -83,6 +90,9 @@ export function fetchMenu(params?: MenuQueryParams): Promise<MenuItem[]> {
   }
   if (params?.search && params.search.trim().length > 0) {
     searchParams.set('search', params.search.trim())
+  }
+  if (params?.dietary && params.dietary !== 'all') {
+    searchParams.set('dietary', params.dietary)
   }
   const query = searchParams.toString()
   return apiRequest<MenuItem[]>(`/api/menu${query ? `?${query}` : ''}`, {
@@ -104,6 +114,19 @@ export function fetchOrder(orderId: string): Promise<OrderDetail> {
     `/api/orders/${encodeURIComponent(orderId.trim())}`,
     {
       method: 'GET',
+    },
+  )
+}
+
+export function processDemoPayment(
+  orderId: string,
+  payload: DemoPaymentRequest,
+): Promise<DemoPaymentResponse> {
+  return apiRequest<DemoPaymentResponse>(
+    `/api/orders/${encodeURIComponent(orderId.trim())}/demo-payment`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
     },
   )
 }
@@ -134,6 +157,24 @@ export function updateKitchenOrderStatus(
 export function fetchKitchenSlots(): Promise<SlotWorkload[]> {
   return apiRequest<SlotWorkload[]>('/api/kitchen/slots', {
     method: 'GET',
+  })
+}
+
+export function verifyPickupToken(
+  token: string,
+): Promise<VerifyPickupResponse> {
+  return apiRequest<VerifyPickupResponse>('/api/kitchen/verify-pickup', {
+    method: 'POST',
+    body: JSON.stringify({ token: token.trim() }),
+  })
+}
+
+export function parseNaturalOrder(
+  text: string,
+): Promise<NaturalOrderParseResponse> {
+  return apiRequest<NaturalOrderParseResponse>('/api/natural-order/parse', {
+    method: 'POST',
+    body: JSON.stringify({ text: text.trim() }),
   })
 }
 
@@ -257,4 +298,20 @@ export function updateManagerSlotStatus(
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+}
+
+export function fetchAvailableSlots(
+  workloadUnits = 0,
+): Promise<AvailableSlotsResponse> {
+  const searchParams = new URLSearchParams()
+  if (workloadUnits > 0) {
+    searchParams.set('workload_units', String(Math.floor(workloadUnits)))
+  }
+  const query = searchParams.toString()
+  return apiRequest<AvailableSlotsResponse>(
+    `/api/slots/available${query ? `?${query}` : ''}`,
+    {
+      method: 'GET',
+    },
+  )
 }

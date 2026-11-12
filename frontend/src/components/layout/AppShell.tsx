@@ -17,7 +17,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-[#faf8f5] text-stone-900">
+    <div className="min-h-screen overflow-x-hidden bg-[#faf8f5] text-stone-900">
       <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">

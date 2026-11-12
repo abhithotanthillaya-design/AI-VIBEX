@@ -144,14 +144,27 @@ export function ManagerMenuSection({
                               </div>
                             )}
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <VegBadge isVeg={item.is_veg} />
                                 <span className="font-semibold text-stone-900">
                                   {item.name}
                                 </span>
+                                {item.is_vegan && (
+                                  <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 border border-emerald-200">
+                                    Vegan
+                                  </span>
+                                )}
+                                {item.is_jain && (
+                                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 border border-amber-200">
+                                    Jain
+                                  </span>
+                                )}
                               </div>
                               <p className="max-w-xs truncate text-xs text-stone-500">
                                 {item.description}
+                              </p>
+                              <p className="max-w-xs truncate text-[11px] text-stone-500">
+                                Allergens: {item.allergen_info ?? 'Not listed'}
                               </p>
                             </div>
                           </div>
@@ -249,6 +262,11 @@ export function ManagerMenuSection({
                   </div>
 
                   <p className="text-xs text-stone-600">{item.description}</p>
+                  <p className="text-[11px] text-stone-500">
+                    Allergens: {item.allergen_info ?? 'Not listed'}
+                    {item.is_vegan ? ' · Vegan' : ''}
+                    {item.is_jain ? ' · Jain-Friendly' : ''}
+                  </p>
 
                   <div className="flex items-center justify-end gap-2 border-t border-stone-100 pt-2.5">
                     <Button

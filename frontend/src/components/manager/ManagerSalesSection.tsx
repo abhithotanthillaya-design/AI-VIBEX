@@ -120,7 +120,7 @@ export function ManagerSalesSection({
                     : 0
                 return (
                   <div key={day.date} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
                       <span className="font-medium text-stone-700">
                         {day.label}
                       </span>

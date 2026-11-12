@@ -1,4 +1,6 @@
 import { Search, X } from 'lucide-react'
+import type { DietaryFilter } from '../types'
+import { DIETARY_FILTER_OPTIONS } from '../utils/phase10'
 
 interface MenuFiltersProps {
   searchQuery: string
@@ -6,6 +8,8 @@ interface MenuFiltersProps {
   categories: string[]
   selectedCategory: string
   onCategoryChange: (category: string) => void
+  dietaryFilter: DietaryFilter
+  onDietaryChange: (dietary: DietaryFilter) => void
   categoryCounts: Record<string, number>
   totalCount: number
 }
@@ -16,6 +20,8 @@ export function MenuFilters({
   categories,
   selectedCategory,
   onCategoryChange,
+  dietaryFilter,
+  onDietaryChange,
   categoryCounts,
   totalCount,
 }: MenuFiltersProps) {
@@ -100,6 +106,32 @@ export function MenuFilters({
               >
                 {count}
               </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div
+        className="flex flex-wrap items-center gap-1.5"
+        role="group"
+        aria-label="Filter by dietary preference"
+      >
+        <span className="mr-1 text-xs font-medium text-stone-500">Dietary:</span>
+        {DIETARY_FILTER_OPTIONS.map((opt) => {
+          const active = dietaryFilter === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onDietaryChange(opt.value)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                active
+                  ? 'border-emerald-700 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-700'
+                  : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+              }`}
+            >
+              {opt.label}
             </button>
           )
         })}

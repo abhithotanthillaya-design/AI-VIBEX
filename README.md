@@ -31,15 +31,13 @@ QUEUELESS connects three focused web interfaces:
 
 ## 4. Key Features
 
-- Responsive student menu catalog seeded in SQLite with local Indian canteen food photography.
-- Live search, category filtering (`Meals`, `Fast Food`, `Snacks`, `Beverages`), and unavailable-item protection.
-- Interactive cart with quantity controls, estimated kitchen workload preview, duplicate-submission prevention, and server-side paise price calculation.
-- Deterministic capacity-aware 5-minute pickup-slot allocator with atomic SQLite transaction locking (`BEGIN IMMEDIATE` + process lock).
-- Order confirmation receipt with unique Order ID, 4-character pickup code, and assigned pickup window.
-- Dedicated student order tracking page with 5-stage progress timeline, Order ID lookup, and 4-second live polling.
-- Kitchen live queue grouped by pickup slot, interactive status summary cards, slot capacity meters, collection confirmation dialog, and 4-second polling.
-- Manager dashboard (`Overview`, `Menu`, `Orders`, `Sales`, `Slot Settings`) with Veg/Non-Veg menu CRUD, soft deletion preserving order snapshots, collected-only sales analytics, DB-backed capacity updates, and pickup-slot close/reopen controls.
-- Guarded `POST /api/demo/reset` endpoint and UI confirmation workflow for hackathon demonstrations.
+- **Student Menu & Dietary Safety:** Live menu catalog seeded in SQLite with local Indian canteen food photography, category filters (`Meals`, `Fast Food`, `Snacks`, `Beverages`), dietary filters (`Veg`, `Vegan`, `Jain-Friendly`, `Non-Veg`), and manager-verified allergen disclosure (`"Not listed — confirm at counter"` when unverified).
+- **Order in Your Own Words (Phase 8):** Local deterministic plain-language parser (`POST /api/natural-order/parse`) matching live SQLite items/prices with confirmation preview and optional pickup-time matching before adding to cart.
+- **Cart, Special Instructions & Simulated Demo Payment:** Sanitized preparation/allergy instructions (max 300 chars, with non-guarantee counter notice), clearly labelled simulated payment methods (`Cash at Counter` / `Demo UPI` with no real money charged), duplicate-submission prevention, and server-side paise calculation.
+- **Capacity-Aware Slot Selection & Allocation (Phase 9):** Chronological upcoming 5-minute pickup-slot selector (`Available`, `Limited availability`, `Full`, `Closed`) plus atomic SQLite transaction locking (`BEGIN IMMEDIATE` + `_WRITE_LOCK`) without silent slot shifting.
+- **QR & Pickup Code Tracking + Order History:** One-time cryptographic QR pickup token + 4-character pickup code, 5-stage live tracking timeline (4s polling), and honest browser-local Order History with individual backend `GET /api/orders/{order_id}` sync and manual Order ID lookup (no open list endpoint).
+- **Kitchen Operations Dashboard:** Live slot-grouped queue, Special Instructions visibility, sequential status updates, camera + manual QR verification (`POST /api/kitchen/verify-pickup`), slot workload meters, and guarded Demo Reset.
+- **Manager Console (Demo Prototype Access):** Real-time operational KPIs (`Asia/Kolkata`), full menu CRUD with dietary & allergen fields, snapshot-safe soft deletion, order oversight, collected-only 7-day sales summary, and DB-backed slot capacity/closure controls.
 
 ---
 
@@ -196,11 +194,15 @@ npm.cmd run dev
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Service and SQLite connectivity check |
-| `GET` | `/api/menu` | List available menu items (supports `category`, `search`, `include_unavailable`) |
-| `POST` | `/api/orders` | Validate items, compute server total, allocate slot, create order |
+| `GET` | `/api/menu` | List available menu items (`category`, `dietary`, `search`, `include_unavailable`) |
+| `GET` | `/api/slots/available` | List chronological upcoming pickup slots (`workload_units` feasibility) |
+| `POST` | `/api/natural-order/parse` | Parse plain-language text against live SQLite menu & slots for preview |
+| `POST` | `/api/orders` | Validate items, notes, payment method, optional slot, reserve atomically |
+| `POST` | `/api/orders/{order_id}/demo-payment` | Process simulated Demo UPI / Counter Cash state transition (demo only) |
 | `GET` | `/api/orders/{order_id}` | Fetch live order status, items, pickup code, and pickup window |
 | `GET` | `/api/kitchen/orders` | List kitchen orders (`status=active` default or specific status) |
 | `PATCH` | `/api/kitchen/orders/{order_id}/status` | Advance order (`PLACED → ACCEPTED → PREPARING → READY → COLLECTED`) |
+| `POST` | `/api/kitchen/verify-pickup` | Verify one-time QR pickup token and atomically collect a `READY` order |
 | `GET` | `/api/kitchen/slots` | List upcoming and active pickup slots with occupied/remaining units and closure status |
 | `GET` | `/api/manager/dashboard` | Real-time manager KPIs in `Asia/Kolkata` timezone |
 | `GET` | `/api/manager/menu` | List all non-deleted menu items (available and sold out) |
@@ -221,11 +223,12 @@ Full request/response contracts and error payloads are documented in [docs/API.m
 
 ## 11. Database Explanation
 
-SQLite (`queueless.db`, WAL mode, foreign keys enabled) stores three core tables:
+SQLite (`queueless.db`, WAL mode, foreign keys enabled) stores five core tables with idempotent additive migrations:
 
-- `menu_items`: Catalog items with integer `price` (in paise), `prep_minutes` workload estimate, `available` boolean (`0`/`1`), category, and `image_url`.
-- `orders`: Order metadata including unique `pickup_code`, `customer_name`, `status`, `pickup_slot_start`, `pickup_slot_end`, server-calculated `total_amount` (paise), `total_prep_units`, optional `notes`, `created_at`, and `updated_at`.
+- `menu_items`: Catalog items with integer `price` (in paise), `prep_minutes` workload estimate, `available`, `is_veg`, `is_vegan`, `is_jain`, manager-verified `allergen_info`, soft-delete flag `is_deleted`, category, and `image_url`.
+- `orders`: Order metadata including unique `pickup_code`, `customer_name`, `status`, `pickup_slot_start`, `pickup_slot_end`, server-calculated `total_amount` (paise), `total_prep_units`, sanitized `notes`, simulated `payment_method`/`payment_status`/`payment_reference`, SHA-256 `pickup_token_hash` & `pickup_token_used_at`, `created_at`, and `updated_at`.
 - `order_items`: Snapshotted line items (`item_name`, `quantity`, `unit_price`, `prep_minutes`) referencing `orders.id` (`ON DELETE CASCADE`) and `menu_items.id`.
+- `canteen_settings` & `closed_slots`: Manager-configured slot capacity (`slot_capacity_units`) and closed pickup windows.
 
 Slot workload is derived transactionally from active rows in `orders` (`status NOT IN ('COLLECTED', 'CANCELLED')`) so slot capacity never drifts out of sync with order states.
 
@@ -256,24 +259,52 @@ cd backend
 cd ..\frontend
 npm.cmd run build
 npm.cmd run lint
-node --test tests/cart.test.ts tests/kitchen.test.ts tests/demo_reset.test.ts tests/manager.test.ts
+node --test tests/cart.test.ts tests/kitchen.test.ts tests/demo_reset.test.ts tests/manager.test.ts tests/qr.test.ts tests/natural_order.test.ts tests/slot_selection.test.ts tests/phase10.test.ts
 ```
 
 ---
 
-## 14. Demo Workflow
+## 14. QR Pickup Verification & Security
+
+- **Token generation & storage:** Each new order receives a cryptographically random bearer token (`secrets.token_urlsafe(24)` prefixed with `qlp_`). Only its SHA-256 hex digest (`pickup_token_hash`) is stored in SQLite (`orders`); raw tokens are returned once in `POST /api/orders`, persisted client-side in `localStorage` for tracking page refreshes, and never exposed in `GET /api/kitchen/orders`, `GET /api/manager/orders`, or `GET /api/orders/{order_id}`.
+- **QR rendering & fallback:** `PickupQrCard` renders the token locally using `qrcode` (zero external network calls) with an enlarge modal. If a token is unavailable in the browser session or QR rendering fails, the student's 4-character `pickup_code` and `order_id` remain visible with a **Retry QR** action.
+- **Kitchen scanner & camera permissions:** `KitchenQrScannerModal` uses `jsqr` + `navigator.mediaDevices.getUserMedia` (defaulting to the rear camera `{ facingMode: { ideal: 'environment' } }`), requests camera access only when opened, stops all camera tracks immediately on close/unmount, prevents rapid duplicate scans with a 3-second cooldown, and includes a **Manual Token Fallback** input calling `POST /api/kitchen/verify-pickup`.
+- **HTTPS note:** Browser camera access (`getUserMedia`) works on `http://localhost` / `http://127.0.0.1` and requires **HTTPS** when served over a LAN or public hostname.
+- **Production auth requirement:** Kitchen and Manager endpoints are open in hackathon demo mode and require authentication and role-based authorization before production deployment.
+
+---
+
+## 15. Plain-Language / Natural-Language Ordering
+
+- **Deterministic backend parsing:** `POST /api/natural-order/parse` (`backend/app/natural_order.py`) splits student requests into food clauses and an optional pickup time note, matching only against live SQLite `menu_items` (available, unavailable, and soft-deleted) using exact matching, controlled canteen synonyms (e.g. `tea` → `Masala Chai`), and bounded fuzzy matching.
+- **Zero invented items or unsafe substitutions:** Sold-out, soft-deleted, unknown, invalid-quantity (`<= 0`, fractional, or `> 20`), or ambiguous phrases (e.g. generic `"masala"`) are surfaced clearly instead of being guessed or silently replaced.
+- **Confirmation before cart & slot preselection:** Students preview matched items, adjust quantities, resolve ambiguous candidates from clickable options, and preselect a matching valid pickup window in Cart (`matched_slot_start` or clear unavailability explanation) before confirming checkout via `POST /api/orders`.
+
+---
+
+## 16. Student Pickup-Slot Selection
+
+- **Live slot selector (`PickupSlotSelector`):** Checkout fetches `GET /api/slots/available?workload_units=<units>` in `Asia/Kolkata`, displaying upcoming 5-minute windows chronologically with remaining workload and badges (`Available`, `Limited availability`, `Full`, `Closed`, `Not enough space`).
+- **Default & explicit selection:** Defaults to the earliest feasible window while allowing students to choose any open feasible window manually (or via Phase 8 natural-language time preselection).
+- **Atomic backend validation & no silent shifting:** `POST /api/orders` accepts optional `requested_pickup_slot_start` and validates capacity, closure status, and horizon inside the serialized SQLite transaction (`_WRITE_LOCK` + `BEGIN IMMEDIATE`). If the selected slot became full, closed, or too small before submission, checkout rejects with HTTP `409`/`400`, explains why, and refreshes available slots instead of silently reassigning another slot.
+
+---
+
+## 17. Demo Workflow
 
 Follow [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for a 3-minute judge walkthrough covering:
 1. Clean queue verification (or **Reset Demo** in Kitchen).
-2. Student placing Order 1 (10 prep units) → assigned earliest slot.
+2. Student placing Order 1 (via menu cards or **Order in your own words** confirmation preview + slot selection, 10 prep units) → assigned/reserved slot.
 3. Student placing Order 2 (6 prep units) → overflows to next 5-minute slot (`10 + 6 > 12`).
 4. Kitchen accepting, preparing, marking ready, and confirming collection while Student Tracking updates automatically and slot capacity resets to `0 / 12`.
 
 ---
 
-## 15. Known Limitations
+## 18. Security & Known Limitations
 
-- **Demo mode scope & security transparency:** No real payment gateway, campus SSO authentication, or SMS/WhatsApp notifications. The **Manager** interface is labelled **Demo Prototype Access** and is unauthenticated; production deployment requires authentication and role-based authorization before exposing `/api/manager/*`.
-- **Single-canteen prototype:** Tuned for one canteen with a static seeded menu (`backend/app/seed.py`) and configurable prototype capacity (`12` units / `5`-minute slot).
-- **Polling sync:** Live updates poll every `4` seconds rather than using WebSockets or Server-Sent Events.
-- **Demo Reset protection:** `POST /api/demo/reset` is blocked when `ENVIRONMENT=production` or `ENABLE_DEMO_RESET=false`, and requires explicit confirmation in the Kitchen UI.
+- **No authentication / RBAC (Demo Prototype Access):** Kitchen (`/api/kitchen/*`) and Manager (`/api/manager/*`) routes are unauthenticated in hackathon demo mode, and student order history relies on browser `localStorage` Order ID references plus manual Order ID lookup (`GET /api/orders/{order_id}`) with **no open order-listing endpoint** for students. Production deployment requires institutional auth (SSO/JWT), role-based authorization, and customer ownership checks.
+- **Simulated Payment Only:** `Demo UPI` and `Cash at Counter` are strictly simulated demo controls (`"Demo Payment — No real money is charged"`). No real UPI PINs, card numbers, banking credentials, or payment gateways are collected or integrated.
+- **Dietary & Allergy Disclaimer:** Vegan, Jain-friendly, and allergen fields show only manager-entered values (`"Not listed — confirm at counter"` when blank). Special instructions (`notes`) are preparation requests, not a guarantee of allergen-free preparation.
+- **QR & HTTPS Constraints:** Raw `pickup_token` is returned only at creation time (`localStorage`-persisted for student refresh; SQLite holds SHA-256 hash only). Device camera scanning via `getUserMedia` requires HTTPS outside `localhost`/`127.0.0.1`; manual token entry and manual counter collection remain fallbacks.
+- **Plain-language parser boundaries:** Runs a local deterministic phrase/synonym/fuzzy parser rather than an external LLM. Complex multi-clause grammar or slang outside the live menu & synonym table is flagged as unmatched for manual selection, and natural-language pickup time preselection remains constrained to the 2-hour (`MAX_EXTENSION_SLOTS = 24`) bookable window and requires checkout confirmation.
+- **Single-canteen & polling prototype:** Tuned for one canteen with SQLite WAL single-instance write locking, 4-second polling instead of WebSockets/SSE, and `POST /api/demo/reset` restricted to non-production environments with `ENABLE_DEMO_RESET=true`.

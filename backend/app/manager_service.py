@@ -39,7 +39,8 @@ def _fetch_active_menu_row(conn: sqlite3.Connection, item_id: str) -> sqlite3.Ro
     """Fetch a non-deleted menu_items row or raise 404."""
     row = conn.execute(
         """
-        SELECT id, name, description, category, price, prep_minutes, available, is_veg, image_url
+        SELECT id, name, description, category, price, prep_minutes, available,
+               is_veg, is_vegan, is_jain, allergen_info, image_url
         FROM menu_items
         WHERE id = ? AND is_deleted = 0
         """,
@@ -66,8 +67,9 @@ def create_manager_menu_item(payload: MenuItemUpsertRequest) -> MenuItemResponse
         conn.execute(
             """
             INSERT INTO menu_items (
-                id, name, description, category, price, prep_minutes, available, is_veg, is_deleted, image_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                id, name, description, category, price, prep_minutes, available,
+                is_veg, is_vegan, is_jain, allergen_info, is_deleted, image_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
             """,
             (
                 item_id,
@@ -78,6 +80,9 @@ def create_manager_menu_item(payload: MenuItemUpsertRequest) -> MenuItemResponse
                 payload.prep_minutes,
                 1 if payload.available else 0,
                 1 if payload.is_veg else 0,
+                1 if payload.is_vegan else 0,
+                1 if payload.is_jain else 0,
+                payload.allergen_info,
                 payload.image_url,
             ),
         )
@@ -97,7 +102,8 @@ def update_manager_menu_item(
             """
             UPDATE menu_items
             SET name = ?, description = ?, category = ?, price = ?,
-                prep_minutes = ?, available = ?, is_veg = ?, image_url = ?
+                prep_minutes = ?, available = ?, is_veg = ?,
+                is_vegan = ?, is_jain = ?, allergen_info = ?, image_url = ?
             WHERE id = ? AND is_deleted = 0
             """,
             (
@@ -108,6 +114,9 @@ def update_manager_menu_item(
                 payload.prep_minutes,
                 1 if payload.available else 0,
                 1 if payload.is_veg else 0,
+                1 if payload.is_vegan else 0,
+                1 if payload.is_jain else 0,
+                payload.allergen_info,
                 payload.image_url,
                 cleaned_id,
             ),
@@ -206,6 +215,7 @@ def list_manager_orders(
             SELECT id, pickup_code, customer_name, status,
                    pickup_slot_start, pickup_slot_end,
                    total_amount, total_prep_units, notes,
+                   payment_method, payment_status, payment_reference,
                    created_at, updated_at
             FROM orders
             {where_sql}

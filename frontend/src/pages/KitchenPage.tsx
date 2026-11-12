@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChefHat,
   Clock,
+  QrCode,
   RefreshCw,
   RotateCcw,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ import {
 } from '../api/client'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { KitchenOrderCard } from '../components/KitchenOrderCard'
+import { KitchenQrScannerModal } from '../components/KitchenQrScannerModal'
 import {
   KitchenSummaryCards,
   type KitchenQueueFilter,
@@ -23,14 +25,23 @@ import {
 import { SlotWorkloadPanel } from '../components/SlotWorkloadPanel'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
-import type { OrderDetail, OrderStatus, SlotWorkload } from '../types'
+import type {
+  OrderDetail,
+  OrderStatus,
+  SlotWorkload,
+  VerifyPickupResponse,
+} from '../types'
 import { executeGuardedDemoReset } from '../utils/demoReset'
 import { formatTimeWindow } from '../utils/format'
 import {
   computeKitchenSummary,
   groupOrdersBySlot,
 } from '../utils/kitchen'
-import { writeStoredOrderId } from '../utils/storage'
+import {
+  clearStoredOrderHistory,
+  clearStoredPickupTokens,
+  writeStoredOrderId,
+} from '../utils/storage'
 
 const KITCHEN_POLL_INTERVAL_MS = 4000
 
@@ -83,6 +94,7 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
     useState<OrderDetail | null>(null)
   const [isResetDialogOpen, setIsResetDialogOpen] = useState<boolean>(false)
   const [isResettingDemo, setIsResettingDemo] = useState<boolean>(false)
+  const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
 
   const inFlightRef = useRef<boolean>(false)
@@ -288,6 +300,8 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
       resetFn: resetDemo,
       onAfterSuccess: async () => {
         writeStoredOrderId(null)
+        clearStoredPickupTokens()
+        clearStoredOrderHistory()
         setPendingCollectionOrder(null)
         setCollectedOrders([])
         setStatusFilter('ACTIVE')
@@ -307,6 +321,22 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
       setActionError(outcome.message)
     }
   }, [isResetDialogOpen, onDemoReset, syncKitchenData])
+
+  const handleQrVerified = useCallback(
+    (result: VerifyPickupResponse) => {
+      const collectedOrder = result.order
+      setActiveOrders((prev) =>
+        prev.filter((item) => item.id !== collectedOrder.id),
+      )
+      setCollectedOrders((prev) => [
+        collectedOrder,
+        ...prev.filter((item) => item.id !== collectedOrder.id),
+      ])
+      setResetNotice(result.message)
+      void syncKitchenData(statusFilter)
+    },
+    [statusFilter, syncKitchenData],
+  )
 
   const summary = useMemo(
     () => computeKitchenSummary(activeOrders),
@@ -357,6 +387,14 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsScannerOpen(true)}
+            icon={<QrCode className="h-4 w-4" aria-hidden="true" />}
+          >
+            Scan Pickup QR
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -629,6 +667,12 @@ export function KitchenPage({ onDemoReset }: KitchenPageProps) {
         onConfirm={() => {
           void handleConfirmDemoReset()
         }}
+      />
+
+      <KitchenQrScannerModal
+        open={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onVerified={handleQrVerified}
       />
     </section>
   )

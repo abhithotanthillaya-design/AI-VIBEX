@@ -17,7 +17,9 @@ from app.routes.health import router as health_router
 from app.routes.kitchen import router as kitchen_router
 from app.routes.manager import router as manager_router
 from app.routes.menu import router as menu_router
+from app.routes.natural_order import router as natural_order_router
 from app.routes.orders import router as orders_router
+from app.routes.slots import router as slots_router
 from app.seed import seed_menu_items
 
 
@@ -97,9 +99,11 @@ def create_app() -> FastAPI:
 
     application.include_router(health_router, prefix="/api")
     application.include_router(menu_router, prefix="/api")
+    application.include_router(slots_router, prefix="/api")
     application.include_router(orders_router, prefix="/api")
     application.include_router(kitchen_router, prefix="/api")
     application.include_router(manager_router, prefix="/api")
+    application.include_router(natural_order_router, prefix="/api")
     application.include_router(demo_router, prefix="/api")
     return application
 

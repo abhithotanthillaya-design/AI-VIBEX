@@ -2,6 +2,7 @@ import { ArrowRight, Clock, MessageSquareText } from 'lucide-react'
 import type { OrderDetail, OrderStatus } from '../types'
 import { formatRupees, formatTimeWindow } from '../utils/format'
 import { getOrderSlotUrgency, NEXT_KITCHEN_ACTION } from '../utils/kitchen'
+import { getPaymentStatusMeta } from '../utils/phase10'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { StatusBadge } from './ui/StatusBadge'
@@ -96,15 +97,26 @@ export function KitchenOrderCard({
               className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700"
               aria-hidden="true"
             />
-            <span>{order.notes}</span>
+            <span>
+              <strong className="font-semibold">Special Instructions: </strong>
+              {order.notes}
+            </span>
           </div>
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
-        <span className="text-sm font-semibold text-stone-900">
-          {formatRupees(order.total_amount)}
-        </span>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-4">
+        <div className="min-w-0">
+          <span className="text-sm font-semibold text-stone-900">
+            {formatRupees(order.total_amount)}
+          </span>
+          <p className="text-[11px] text-stone-500">
+            {
+              getPaymentStatusMeta(order.payment_status, order.payment_method)
+                .label
+            }
+          </p>
+        </div>
 
         {nextAction ? (
           <Button

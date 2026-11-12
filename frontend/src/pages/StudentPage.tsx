@@ -2,34 +2,62 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ClipboardList,
+  History,
   RefreshCw,
   ShoppingBag,
   Sparkles,
   UtensilsCrossed,
 } from 'lucide-react'
-import { ApiClientError, createOrder, fetchMenu } from '../api/client'
+import {
+  ApiClientError,
+  createOrder,
+  fetchAvailableSlots,
+  fetchMenu,
+} from '../api/client'
 import { CartPanel } from '../components/CartPanel'
 import { MenuCard } from '../components/MenuCard'
 import { MenuFilters } from '../components/MenuFilters'
+import { NaturalOrderPanel } from '../components/NaturalOrderPanel'
 import { OrderConfirmationCard } from '../components/OrderConfirmationCard'
+import { StudentOrderHistory } from '../components/StudentOrderHistory'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
-import type { CartItem, CreateOrderResponse, MenuItem } from '../types'
+import type {
+  AvailablePickupSlot,
+  CartItem,
+  CreateOrderResponse,
+  DemoPaymentMethod,
+  DietaryFilter,
+  MenuItem,
+  ParsedPickupTime,
+} from '../types'
 import {
   addItemToCart,
   calculateCartTotals,
   getCartQuantityMap,
+  mergeParsedItemsIntoCart,
   removeItemFromCart,
   updateCartItemQuantity,
 } from '../utils/cart'
 import { formatRupees } from '../utils/format'
-import { readStoredOrderId, writeStoredOrderId } from '../utils/storage'
+import { filterMenuItemsByDietAndCategory } from '../utils/phase10'
+import {
+  isSlotAllocationErrorCode,
+  resolveCheckoutSlotSelection,
+  type SlotSelectionMode,
+} from '../utils/slots'
+import {
+  readStoredOrderId,
+  recordStoredOrderHistory,
+  writeStoredOrderId,
+  writeStoredPickupToken,
+} from '../utils/storage'
 import { OrderTrackingPage } from './OrderTrackingPage'
 
 const CATEGORY_ORDER = ['Meals', 'Fast Food', 'Snacks', 'Beverages']
 const MENU_POLL_INTERVAL_MS = 10000
 
-type StudentSubView = 'menu' | 'tracking'
+type StudentSubView = 'menu' | 'tracking' | 'history'
 
 function MenuGridSkeleton() {
   return (
@@ -58,6 +86,7 @@ interface PlacedOrderSnapshot {
   confirmation: CreateOrderResponse
   items: CartItem[]
   customerName: string
+  notes?: string
 }
 
 export function StudentPage() {
@@ -67,10 +96,25 @@ export function StudentPage() {
   const [menuError, setMenuError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
+  const [dietaryFilter, setDietaryFilter] = useState<DietaryFilter>('all')
   const [cart, setCart] = useState<CartItem[]>([])
 
   const [customerName, setCustomerName] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
+  const [paymentMethod, setPaymentMethod] =
+    useState<DemoPaymentMethod>('COUNTER_CASH')
+  const [availableSlots, setAvailableSlots] = useState<AvailablePickupSlot[]>(
+    [],
+  )
+  const [recommendedSlotStart, setRecommendedSlotStart] = useState<
+    string | null
+  >(null)
+  const [isLoadingSlots, setIsLoadingSlots] = useState<boolean>(false)
+  const [slotsError, setSlotsError] = useState<string | null>(null)
+  const [slotSelectionMode, setSlotSelectionMode] =
+    useState<SlotSelectionMode>('auto')
+  const [selectedSlotStart, setSelectedSlotStart] = useState<string | null>(null)
+  const [slotNotice, setSlotNotice] = useState<string | null>(null)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [placedOrder, setPlacedOrder] = useState<PlacedOrderSnapshot | null>(null)
@@ -79,6 +123,7 @@ export function StudentPage() {
   )
   const submittingGuardRef = useRef<boolean>(false)
   const menuPollInFlightRef = useRef<boolean>(false)
+  const slotsPollInFlightRef = useRef<boolean>(false)
 
   const syncMenuItems = useCallback((items: MenuItem[]) => {
     setMenuItems(items)
@@ -194,25 +239,115 @@ export function StudentPage() {
     return { categories: ordered, categoryCounts: counts }
   }, [menuItems])
 
-  const filteredItems = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase()
-    return menuItems.filter((item) => {
-      if (selectedCategory !== 'All' && item.category !== selectedCategory) {
-        return false
-      }
-      if (!normalizedSearch) {
-        return true
-      }
-      return (
-        item.name.toLowerCase().includes(normalizedSearch) ||
-        item.description.toLowerCase().includes(normalizedSearch) ||
-        item.category.toLowerCase().includes(normalizedSearch)
-      )
-    })
-  }, [menuItems, searchQuery, selectedCategory])
+  const filteredItems = useMemo(
+    () =>
+      filterMenuItemsByDietAndCategory(menuItems, {
+        category: selectedCategory,
+        dietary: dietaryFilter,
+        search: searchQuery,
+      }),
+    [menuItems, searchQuery, selectedCategory, dietaryFilter],
+  )
 
   const quantitiesByItemId = useMemo(() => getCartQuantityMap(cart), [cart])
   const cartTotals = useMemo(() => calculateCartTotals(cart), [cart])
+
+  const loadAvailableSlots = useCallback(async (workloadUnits: number) => {
+    setIsLoadingSlots(true)
+    setSlotsError(null)
+    try {
+      const response = await fetchAvailableSlots(workloadUnits)
+      setAvailableSlots(response.slots)
+      setRecommendedSlotStart(response.recommended_slot_start ?? null)
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        setSlotsError(error.message)
+      } else {
+        setSlotsError('Unable to load pickup slots right now.')
+      }
+    } finally {
+      setIsLoadingSlots(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (subView !== 'menu' || placedOrder !== null || cart.length === 0) {
+      return
+    }
+
+    let active = true
+    const workload = cartTotals.totalPrepUnits
+
+    fetchAvailableSlots(workload)
+      .then((response) => {
+        if (!active) return
+        setAvailableSlots(response.slots)
+        setRecommendedSlotStart(response.recommended_slot_start ?? null)
+        setSlotsError(null)
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        if (error instanceof ApiClientError) {
+          setSlotsError(error.message)
+        } else {
+          setSlotsError('Unable to load pickup slots right now.')
+        }
+      })
+
+    const timerId = window.setInterval(() => {
+      if (slotsPollInFlightRef.current) return
+      slotsPollInFlightRef.current = true
+      fetchAvailableSlots(workload)
+        .then((response) => {
+          setAvailableSlots(response.slots)
+          setRecommendedSlotStart(response.recommended_slot_start ?? null)
+          setSlotsError(null)
+        })
+        .catch(() => {
+          // Preserve current slots during transient polling errors.
+        })
+        .finally(() => {
+          slotsPollInFlightRef.current = false
+        })
+    }, MENU_POLL_INTERVAL_MS)
+
+    return () => {
+      active = false
+      window.clearInterval(timerId)
+    }
+  }, [subView, placedOrder, cart.length, cartTotals.totalPrepUnits])
+
+  const resolvedSlot = useMemo(
+    () =>
+      resolveCheckoutSlotSelection({
+        slots: availableSlots,
+        selectedSlotStart,
+        selectionMode: slotSelectionMode,
+        recommendedSlotStart,
+        orderWorkloadUnits: cartTotals.totalPrepUnits,
+      }),
+    [
+      availableSlots,
+      selectedSlotStart,
+      slotSelectionMode,
+      recommendedSlotStart,
+      cartTotals.totalPrepUnits,
+    ],
+  )
+
+  const handleSelectSlot = useCallback((slotStart: string) => {
+    setSubmitError(null)
+    setSlotNotice(null)
+    setSlotSelectionMode('manual')
+    setSelectedSlotStart(slotStart)
+  }, [])
+
+  const handleUseEarliestSlot = useCallback(() => {
+    setSubmitError(null)
+    setSlotNotice(null)
+    setSlotSelectionMode('auto')
+    setSelectedSlotStart(null)
+  }, [])
 
   const handleAddToCart = useCallback((item: MenuItem) => {
     setSubmitError(null)
@@ -232,11 +367,38 @@ export function StudentPage() {
   const handleClearCart = useCallback(() => {
     setSubmitError(null)
     setCart([])
+    setSlotSelectionMode('auto')
+    setSelectedSlotStart(null)
+    setSlotNotice(null)
   }, [])
+
+  const handleConfirmNaturalItems = useCallback(
+    (
+      additions: { item: MenuItem; quantity: number }[],
+      preferredPickupTime?: ParsedPickupTime | null,
+    ) => {
+      setSubmitError(null)
+      setCart((prev) => mergeParsedItemsIntoCart(prev, additions))
+
+      if (preferredPickupTime) {
+        if (preferredPickupTime.matched_slot_start) {
+          setSlotSelectionMode('natural')
+          setSelectedSlotStart(preferredPickupTime.matched_slot_start)
+          setSlotNotice(
+            `Preselected ${preferredPickupTime.formatted_time ?? 'requested'} pickup window from your request. Please confirm it before placing your order.`,
+          )
+        } else {
+          setSlotNotice(preferredPickupTime.message)
+        }
+      }
+    },
+    [],
+  )
 
   const handleResetFilters = useCallback(() => {
     setSearchQuery('')
     setSelectedCategory('All')
+    setDietaryFilter('all')
   }, [])
 
   const handleOrderIdPersist = useCallback((orderId: string | null) => {
@@ -246,6 +408,11 @@ export function StudentPage() {
 
   const handlePlaceOrder = useCallback(async () => {
     if (submittingGuardRef.current || cart.length === 0) {
+      return
+    }
+
+    if (resolvedSlot.unavailableWarning) {
+      setSubmitError(resolvedSlot.unavailableWarning)
       return
     }
 
@@ -261,6 +428,7 @@ export function StudentPage() {
 
     const cartSnapshot = cart.map((entry) => ({ ...entry }))
     const trimmedNotes = notes.trim()
+    const slotToReserve = resolvedSlot.effectiveSlotStart
 
     try {
       const confirmation = await createOrder({
@@ -269,21 +437,33 @@ export function StudentPage() {
           menu_item_id: entry.item.id,
           quantity: entry.quantity,
         })),
+        payment_method: paymentMethod,
         ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+        ...(slotToReserve ? { requested_pickup_slot_start: slotToReserve } : {}),
       })
 
       // Clear cart only after backend confirms successful order creation.
       setCart([])
       setNotes('')
+      setPaymentMethod('COUNTER_CASH')
+      setSlotSelectionMode('auto')
+      setSelectedSlotStart(null)
+      setSlotNotice(null)
+      writeStoredPickupToken(confirmation.id, confirmation.pickup_token)
+      recordStoredOrderHistory(confirmation.id)
       setPlacedOrder({
         confirmation,
         items: cartSnapshot,
         customerName: trimmedName,
+        notes: trimmedNotes || undefined,
       })
       handleOrderIdPersist(confirmation.id)
     } catch (error) {
       if (error instanceof ApiClientError) {
         setSubmitError(error.message)
+        if (isSlotAllocationErrorCode(error.code)) {
+          void loadAvailableSlots(cartTotals.totalPrepUnits)
+        }
       } else {
         setSubmitError(
           'Unable to place order right now. Please check your connection and try again.',
@@ -293,7 +473,17 @@ export function StudentPage() {
       submittingGuardRef.current = false
       setIsSubmittingOrder(false)
     }
-  }, [cart, customerName, notes, handleOrderIdPersist])
+  }, [
+    cart,
+    cartTotals.totalPrepUnits,
+    customerName,
+    notes,
+    paymentMethod,
+    resolvedSlot.effectiveSlotStart,
+    resolvedSlot.unavailableWarning,
+    handleOrderIdPersist,
+    loadAvailableSlots,
+  ])
 
   const handleOpenTracking = useCallback(
     (orderId: string) => {
@@ -325,6 +515,15 @@ export function StudentPage() {
     )
   }
 
+  if (subView === 'history') {
+    return (
+      <StudentOrderHistory
+        onBackToMenu={() => setSubView('menu')}
+        onOpenTracking={handleOpenTracking}
+      />
+    )
+  }
+
   return (
     <section className="space-y-6 pb-20 lg:pb-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -343,6 +542,14 @@ export function StudentPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSubView('history')}
+            icon={<History className="h-4 w-4" aria-hidden="true" />}
+          >
+            Order History
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -372,18 +579,41 @@ export function StudentPage() {
           confirmation={placedOrder.confirmation}
           orderedItems={placedOrder.items}
           customerName={placedOrder.customerName}
+          notes={placedOrder.notes}
+          onPaymentUpdated={(updated) => {
+            setPlacedOrder((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    confirmation: {
+                      ...prev.confirmation,
+                      payment_method: updated.payment_method,
+                      payment_status: updated.payment_status,
+                      payment_reference: updated.payment_reference,
+                    },
+                  }
+                : prev,
+            )
+          }}
           onTrackOrder={handleOpenTracking}
           onNewOrder={handleStartNewOrder}
         />
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-5">
+            <NaturalOrderPanel
+              menuItems={menuItems}
+              onConfirmAddToCart={handleConfirmNaturalItems}
+            />
+
             <MenuFilters
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               categories={categories}
               selectedCategory={selectedCategory}
               onCategoryChange={setSelectedCategory}
+              dietaryFilter={dietaryFilter}
+              onDietaryChange={setDietaryFilter}
               categoryCounts={categoryCounts}
               totalCount={menuItems.length}
             />
@@ -469,6 +699,23 @@ export function StudentPage() {
               }}
               notes={notes}
               onNotesChange={setNotes}
+              paymentMethod={paymentMethod}
+              onPaymentMethodChange={setPaymentMethod}
+              availableSlots={availableSlots}
+              recommendedSlotStart={recommendedSlotStart}
+              effectiveSlotStart={resolvedSlot.effectiveSlotStart}
+              selectedSlot={resolvedSlot.selectedSlot}
+              isUsingDefaultEarliest={resolvedSlot.isUsingDefaultEarliest}
+              slotUnavailableWarning={resolvedSlot.unavailableWarning}
+              slotNotice={slotNotice}
+              onClearSlotNotice={() => setSlotNotice(null)}
+              isLoadingSlots={isLoadingSlots}
+              slotsError={slotsError}
+              onSelectSlot={handleSelectSlot}
+              onUseEarliestSlot={handleUseEarliestSlot}
+              onRefreshSlots={() => {
+                void loadAvailableSlots(cartTotals.totalPrepUnits)
+              }}
               isSubmitting={isSubmittingOrder}
               submitError={submitError}
               onUpdateQuantity={handleUpdateQuantity}

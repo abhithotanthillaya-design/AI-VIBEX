@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Clock, Minus, Plus, Utensils } from 'lucide-react'
+import { AlertTriangle, Clock, Minus, Plus, Utensils } from 'lucide-react'
 import type { MenuItem } from '../types'
 import { formatRupees } from '../utils/format'
 import { Button } from './ui/Button'
@@ -50,15 +50,42 @@ export function MenuCard({
       </div>
 
       <div className="flex flex-1 flex-col justify-between p-4">
-        <div>
+        <div className="space-y-2.5">
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-base font-semibold leading-snug text-stone-900">
               {item.name}
             </h3>
-            <VegBadge isVeg={item.is_veg} />
+            <VegBadge isVeg={item.is_veg} showLabel />
           </div>
-          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-stone-600">
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {item.is_vegan && (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                Vegan
+              </span>
+            )}
+            {item.is_jain && (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                Jain-Friendly
+              </span>
+            )}
+          </div>
+
+          <p className="text-sm leading-relaxed text-stone-600">
             {item.description}
+          </p>
+
+          <p className="flex items-start gap-1.5 rounded-lg border border-stone-200/80 bg-stone-50/80 px-2.5 py-1.5 text-[11px] leading-snug text-stone-700">
+            <AlertTriangle
+              className="mt-0.5 h-3 w-3 shrink-0 text-amber-700"
+              aria-hidden="true"
+            />
+            <span>
+              <strong className="text-stone-900">Allergens:</strong>{' '}
+              {item.allergen_info
+                ? item.allergen_info
+                : 'Not listed — confirm ingredients at counter'}
+            </span>
           </p>
         </div>
 

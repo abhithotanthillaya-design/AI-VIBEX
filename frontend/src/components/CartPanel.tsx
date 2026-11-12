@@ -1,8 +1,13 @@
-import { AlertCircle, ArrowRight, Clock, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, Banknote, Clock, CreditCard, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import type { FormEvent } from 'react'
-import type { CartItem } from '../types'
+import type {
+  AvailablePickupSlot,
+  CartItem,
+  DemoPaymentMethod,
+} from '../types'
 import { calculateCartTotals } from '../utils/cart'
 import { formatRupees } from '../utils/format'
+import { PickupSlotSelector } from './PickupSlotSelector'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 
@@ -12,6 +17,21 @@ interface CartPanelProps {
   onCustomerNameChange: (value: string) => void
   notes: string
   onNotesChange: (value: string) => void
+  paymentMethod: DemoPaymentMethod
+  onPaymentMethodChange: (method: DemoPaymentMethod) => void
+  availableSlots: AvailablePickupSlot[]
+  recommendedSlotStart: string | null
+  effectiveSlotStart: string | null
+  selectedSlot: AvailablePickupSlot | null
+  isUsingDefaultEarliest: boolean
+  slotUnavailableWarning: string | null
+  slotNotice: string | null
+  onClearSlotNotice: () => void
+  isLoadingSlots: boolean
+  slotsError: string | null
+  onSelectSlot: (slotStart: string) => void
+  onUseEarliestSlot: () => void
+  onRefreshSlots: () => void
   isSubmitting: boolean
   submitError: string | null
   onUpdateQuantity: (itemId: string, delta: number) => void
@@ -26,6 +46,21 @@ export function CartPanel({
   onCustomerNameChange,
   notes,
   onNotesChange,
+  paymentMethod,
+  onPaymentMethodChange,
+  availableSlots,
+  recommendedSlotStart,
+  effectiveSlotStart,
+  selectedSlot,
+  isUsingDefaultEarliest,
+  slotUnavailableWarning,
+  slotNotice,
+  onClearSlotNotice,
+  isLoadingSlots,
+  slotsError,
+  onSelectSlot,
+  onUseEarliestSlot,
+  onRefreshSlots,
   isSubmitting,
   submitError,
   onUpdateQuantity,
@@ -34,10 +69,13 @@ export function CartPanel({
   onPlaceOrder,
 }: CartPanelProps) {
   const totals = calculateCartTotals(items)
+  const slotBlocksSubmit =
+    Boolean(slotUnavailableWarning) ||
+    (availableSlots.length > 0 && effectiveSlotStart === null)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (isSubmitting || items.length === 0) {
+    if (isSubmitting || items.length === 0 || slotBlocksSubmit) {
       return
     }
     onPlaceOrder()
@@ -169,24 +207,98 @@ export function CartPanel({
               </div>
 
               <div>
-                <label
-                  htmlFor="order-notes"
-                  className="block text-xs font-medium text-stone-700"
-                >
-                  Preparation Notes (optional)
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="order-notes"
+                    className="block text-xs font-medium text-stone-700"
+                  >
+                    Special Instructions &amp; Allergy Notes (optional)
+                  </label>
+                  <span className="text-[11px] text-stone-400">
+                    {notes.length}/300
+                  </span>
+                </div>
                 <textarea
                   id="order-notes"
                   rows={2}
                   value={notes}
                   disabled={isSubmitting}
                   onChange={(event) => onNotesChange(event.target.value)}
-                  placeholder="e.g. Less spicy, pack chutney separately"
+                  placeholder="e.g. Less spicy, no onion, no added sugar, peanut sensitivity"
                   maxLength={300}
                   className="mt-1 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none disabled:bg-stone-100"
                 />
+                <p className="mt-1 text-[11px] leading-snug text-stone-500">
+                  Special instructions are shared with kitchen staff, but
+                  allergen-free preparation cannot be guaranteed unless confirmed
+                  at the counter.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="block text-xs font-medium text-stone-700">
+                  Payment Method (Demo Only)
+                </span>
+                <div
+                  className="grid grid-cols-2 gap-2"
+                  role="radiogroup"
+                  aria-label="Simulated demo payment method"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={paymentMethod === 'COUNTER_CASH'}
+                    disabled={isSubmitting}
+                    onClick={() => onPaymentMethodChange('COUNTER_CASH')}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer ${
+                      paymentMethod === 'COUNTER_CASH'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
+                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <Banknote className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>Cash at Counter</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={paymentMethod === 'DEMO_UPI'}
+                    disabled={isSubmitting}
+                    onClick={() => onPaymentMethodChange('DEMO_UPI')}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer ${
+                      paymentMethod === 'DEMO_UPI'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
+                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>Demo UPI</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-stone-500">
+                  Demo Payment — No real money is charged. Never asks for real
+                  UPI PINs or card details.
+                </p>
               </div>
             </div>
+
+            <PickupSlotSelector
+              slots={availableSlots}
+              recommendedSlotStart={recommendedSlotStart}
+              orderWorkloadUnits={totals.totalPrepUnits}
+              effectiveSlotStart={effectiveSlotStart}
+              selectedSlot={selectedSlot}
+              isUsingDefaultEarliest={isUsingDefaultEarliest}
+              unavailableWarning={slotUnavailableWarning}
+              slotNotice={slotNotice}
+              onClearSlotNotice={onClearSlotNotice}
+              isLoading={isLoadingSlots}
+              loadError={slotsError}
+              isSubmitting={isSubmitting}
+              onSelectSlot={onSelectSlot}
+              onUseEarliest={onUseEarliestSlot}
+              onRefresh={onRefreshSlots}
+            />
 
             <div className="space-y-1.5 border-t border-stone-200/80 pt-3 text-sm">
               <div className="flex items-center justify-between text-stone-600">
@@ -223,16 +335,16 @@ export function CartPanel({
               variant="primary"
               size="lg"
               loading={isSubmitting}
-              disabled={items.length === 0 || isSubmitting}
+              disabled={items.length === 0 || isSubmitting || slotBlocksSubmit}
               className="w-full"
               icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
             >
-              {isSubmitting ? 'Assigning Pickup Slot...' : 'Place Order'}
+              {isSubmitting ? 'Validating Pickup Slot...' : 'Place Order'}
             </Button>
 
             <p className="text-center text-[11px] leading-relaxed text-stone-500">
-              Demo pre-order mode · Prices are verified on the server and
-              assigned to the earliest open 5-minute pickup slot.
+              Demo pre-order mode · Prices and selected pickup slot capacity are
+              verified atomically on the server.
             </p>
           </div>
         </form>

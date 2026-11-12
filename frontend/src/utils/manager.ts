@@ -33,6 +33,9 @@ export interface MenuFormValues {
   prepMinutes: string
   imageUrl: string
   isVeg: boolean
+  isVegan?: boolean
+  isJain?: boolean
+  allergenInfo?: string
   available: boolean
 }
 
@@ -99,6 +102,23 @@ export function validateMenuFormInput(
     }
   }
 
+  const isVegan = Boolean(values.isVegan)
+  const isJain = Boolean(values.isJain)
+  if (!values.isVeg && (isVegan || isJain)) {
+    return {
+      ok: false,
+      error: 'Vegan or Jain-friendly dishes must also be marked Vegetarian.',
+    }
+  }
+
+  const trimmedAllergen = (values.allergenInfo ?? '').trim()
+  if (trimmedAllergen.length > 200) {
+    return {
+      ok: false,
+      error: 'Allergen information cannot exceed 200 characters.',
+    }
+  }
+
   return {
     ok: true,
     payload: {
@@ -109,6 +129,9 @@ export function validateMenuFormInput(
       prep_minutes: parsedPrep,
       image_url: trimmedImage || null,
       is_veg: values.isVeg,
+      is_vegan: isVegan,
+      is_jain: isJain,
+      allergen_info: trimmedAllergen || null,
       available: values.available,
     },
   }

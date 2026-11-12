@@ -8,11 +8,14 @@ from app.models import (
     list_kitchen_orders,
     list_kitchen_slots,
     update_kitchen_order_status,
+    verify_pickup_by_token,
 )
 from app.schemas import (
     OrderDetailResponse,
     OrderStatusUpdateRequest,
     SlotWorkloadResponse,
+    VerifyPickupRequest,
+    VerifyPickupResponse,
 )
 
 router = APIRouter(prefix="/kitchen", tags=["kitchen"])
@@ -54,4 +57,16 @@ def patch_kitchen_order_status(
 def get_kitchen_slots() -> list[SlotWorkloadResponse]:
     """Return upcoming and active pickup slots with capacity and order counts."""
     return list_kitchen_slots(get_settings())
+
+
+@router.post("/verify-pickup", response_model=VerifyPickupResponse)
+def verify_pickup_qr(payload: VerifyPickupRequest) -> VerifyPickupResponse:
+    """Verify a one-time QR pickup token and collect a READY order atomically."""
+    try:
+        return verify_pickup_by_token(payload.token, get_settings())
+    except OrderValidationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"error": exc.code, "message": exc.message},
+        ) from exc
 

@@ -1,15 +1,19 @@
 import { CheckCircle2, Clock, Copy, Check, ArrowRight, PlusCircle } from 'lucide-react'
 import { useState } from 'react'
-import type { CartItem, CreateOrderResponse } from '../types'
+import type { CartItem, CreateOrderResponse, OrderDetail } from '../types'
 import { formatRupees, formatTimeWindow } from '../utils/format'
+import { DemoPaymentPanel } from './DemoPaymentPanel'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { StatusBadge } from './ui/StatusBadge'
+import { PickupQrCard } from './PickupQrCard'
 
 interface OrderConfirmationCardProps {
   confirmation: CreateOrderResponse
   orderedItems: CartItem[]
   customerName: string
+  notes?: string
+  onPaymentUpdated?: (updatedOrder: OrderDetail) => void
   onTrackOrder: (orderId: string) => void
   onNewOrder: () => void
 }
@@ -18,6 +22,8 @@ export function OrderConfirmationCard({
   confirmation,
   orderedItems,
   customerName,
+  notes,
+  onPaymentUpdated,
   onTrackOrder,
   onNewOrder,
 }: OrderConfirmationCardProps) {
@@ -114,6 +120,23 @@ export function OrderConfirmationCard({
           </div>
         </div>
 
+        <PickupQrCard
+          token={confirmation.pickup_token}
+          pickupCode={confirmation.pickup_code}
+          orderId={confirmation.id}
+          orderStatus={confirmation.status}
+        />
+
+        <DemoPaymentPanel
+          orderId={confirmation.id}
+          amountPaise={confirmation.total_amount}
+          orderStatus={confirmation.status}
+          paymentMethod={confirmation.payment_method}
+          paymentStatus={confirmation.payment_status}
+          paymentReference={confirmation.payment_reference}
+          onPaymentUpdated={onPaymentUpdated}
+        />
+
         <div className="rounded-2xl border border-stone-200/80 bg-white">
           <div className="border-b border-stone-100 px-4 py-3">
             <h3 className="text-sm font-semibold text-stone-900">
@@ -136,6 +159,12 @@ export function OrderConfirmationCard({
               </li>
             ))}
           </ul>
+          {notes && (
+            <div className="border-t border-stone-100 bg-amber-50/50 px-4 py-2.5 text-xs text-amber-950">
+              <strong className="font-semibold">Special Instructions:</strong>{' '}
+              {notes}
+            </div>
+          )}
           <div className="flex items-center justify-between border-t border-stone-200/80 bg-stone-50/70 px-4 py-3 text-base font-semibold text-stone-900">
             <span>Verified Total</span>
             <span>{formatRupees(confirmation.total_amount)}</span>

@@ -64,6 +64,8 @@ Defined in `backend/app/database.py`:
 | `total_amount` | `INTEGER` | Server-calculated total in paise |
 | `total_prep_units` | `INTEGER` | Sum of `prep_minutes * quantity` |
 | `notes` | `TEXT` | Optional kitchen instructions |
+| `pickup_token_hash` | `TEXT` | Unique SHA-256 hex digest of one-time pickup QR token (nullable for legacy rows) |
+| `pickup_token_used_at` | `TEXT` | ISO-8601 timestamp recorded upon collection (QR or manual) |
 | `created_at` | `TEXT` | ISO-8601 timestamp |
 | `updated_at` | `TEXT` | ISO-8601 timestamp |
 
@@ -107,4 +109,41 @@ Implemented in `backend/app/allocator.py`:
    - Oversized orders ($C < \text{workload} \le 3C$): require an empty open slot ($\text{prior\_units} = 0$) and return a dedicated-window explanation message.
    - Extreme batches ($\text{workload} > 3C$): rejected (`400 order_too_large`) so kitchen batches remain bounded.
    - If all slots in a 2-hour horizon (`MAX_EXTENSION_SLOTS = 24`) are closed or occupied, returns `409 kitchen_full`.
+
+---
+
+## 6. QR Code Generation & Pickup Verification Security
+
+1. **Order Placement:** `create_order()` generates `qlp_<secrets.token_urlsafe(24)>` inside `write_transaction()`, hashes it with SHA-256 (`pickup_token_hash`), saves only the hash in `orders`, and returns `pickup_token` once to the client.
+2. **Student Persistence & Rendering:** The frontend stores `order_id -> pickup_token` in `localStorage` so refreshing/reopening tracking re-renders the same QR code locally via `qrcode`. `GET /api/orders/{id}`, `GET /api/kitchen/orders`, and `GET /api/manager/orders` never return raw or hashed tokens.
+3. **Atomic Verification:** `POST /api/kitchen/verify-pickup` hashes the submitted token, locates the order inside `write_transaction()`, validates the hash via `hmac.compare_digest()`, verifies `status == 'READY'` and `pickup_token_used_at IS NULL`, and calls the shared `_apply_status_transition_in_tx(..., 'COLLECTED')` helper so capacity is released once and concurrent duplicate scans fail with `409 order_already_collected`.
+4. **Camera & Fallback:** `KitchenQrScannerModal` scans via `jsqr` on a `<canvas>` fed by `navigator.mediaDevices.getUserMedia` (rear camera default, stopped immediately on close/unmount), with a 3-second duplicate-scan cooldown and manual token paste fallback. Camera access requires HTTPS outside `localhost`.
+
+---
+
+## 7. Plain-Language Order Parsing Architecture
+
+1. **Authoritative Backend Parser:** `POST /api/natural-order/parse` delegates to `backend/app/natural_order.py` (`parse_natural_order()`), querying live SQLite `menu_items` (`available`, `unavailable`, and `is_deleted`) and current `get_kitchen_slot_workloads()` in `Asia/Kolkata`. No paid external API or second pickup-slot allocator is created.
+2. **Matching & Safety Rules:** Extracts optional pickup time phrases (`around 1:30 PM`, `at 14:15`, etc.), splits multi-item clauses (`and`, `,`, `&`, `;`, newlines), parses digit/number-word quantities (`1..20`, flagging `<= 0`, fractional, or `> 20`), and resolves names via exact, controlled synonym, and bounded fuzzy matching. Sold-out/deleted, ambiguous, or unknown phrases are never substituted silently.
+3. **Preview & Checkout Reuse:** `NaturalOrderPanel` displays a structured confirmation preview (**Edit Request**, **Cancel**, quantity adjustment, ambiguous candidate buttons, and **Confirm & Add to Cart**) before calling `mergeParsedItemsIntoCart()` and passing `requested_pickup_time` (`matched_slot_start` when feasible, or an explanation banner when unavailable) into checkout's `PickupSlotSelector`.
+
+---
+
+## 8. Student Pickup-Slot Selection Architecture
+
+1. **Unified Capacity & Closure Source of Truth:** `list_available_pickup_slots()` in `backend/app/allocator.py` shares the exact same `get_effective_slot_capacity()`, `get_closed_slots_map()`, `get_active_slot_workloads()`, and `is_slot_feasible_for_workload()` helpers used by `allocate_pickup_slot()` and manager/kitchen views.
+2. **Exact-Slot Reservation Without Silent Reassignment:** When `CreateOrderRequest.requested_pickup_slot_start` is sent to `POST /api/orders`, `_normalize_slot_timestamp()` parses ISO timestamps into `Asia/Kolkata`, verifies 5-minute grid alignment, bookable horizon, closure state, and live workload inside `write_transaction()`. Conflicts return HTTP `409`/`400` instead of moving the student silently.
+3. **Frontend Selector & Natural-Language Preselection:** `PickupSlotSelector` renders inside `CartPanel`, defaulting to the earliest feasible window (`recommended_slot_start`), allowing manual selection across upcoming windows (`Available`, `Limited availability`, `Full`, `Closed`), preselecting valid NL-matched times, and surfacing clear conflict notices + slot refresh on concurrent full/closed transitions.
+
+---
+
+## 9. Dietary Safety, Order History & Simulated Demo Payment Architecture
+
+1. **Dietary & Allergen Metadata:** `menu_items` stores manager-maintained `is_veg`, `is_vegan`, `is_jain`, and optional `allergen_info`. Unverified values are never inferred or advertised as `"allergen-free"` (`"Not listed — confirm at counter"` when blank).
+2. **Sanitized Special Instructions:** `CreateOrderRequest` strips ASCII control characters from `customer_name` and `notes` (`max_length=300`) while preserving instructions end-to-end across confirmation, tracking, kitchen cards, and manager orders with explicit non-guarantee disclaimers.
+3. **Browser-Local Order History Privacy:** Because the hackathon prototype has no institutional student login, no unrestricted student list endpoint (`GET /api/orders`) exists; instead, `StudentOrderHistory` stores IDs placed/searched in the user's browser (`localStorage`) and fetches each record individually via `GET /api/orders/{order_id}`.
+4. **Simulated Demo Payment State Machine:** `POST /api/orders/{order_id}/demo-payment` transitions unpaid orders (`PENDING`, `DEMO_FAILED`, `DEMO_CANCELLED`, `PAY_AT_COUNTER`) atomically inside `write_transaction()`, enforces `409 already_demo_paid` against duplicate clicks, never requests real PINs/cards/credentials, and isolates `payment_status` from `order.status`.
+
+
+
 
